@@ -56,4 +56,4 @@ Archives may contain secrets when `archivePrivacy` is `"raw"` because the point 
 
 ## Run log
 
-When `logRuns` is enabled, Pi-Shrinkage appends one JSON object per governed tool result to `logFile` (default `.pi-shrinkage/runs.jsonl`). The log does not include raw tool output. It records what happened (`action`, `strategy`, `decisionAction`, `changed`, `archived`, `archiveId`), approximate token counts using Pi's `ceil(chars / 4)` heuristic (`rawTokens`, `finalTokens`, `savedTokens`), character counts, tool metadata, and duration. Commands are best-effort redacted before logging.
+When `logRuns` is enabled, Pi-Shrinkage appends one JSON object per governed tool result to `logFile` (default `.pi-shrinkage/runs.jsonl`). The log does not include raw tool output. It records the calling `sessionId`, what happened (`action`, `strategy`, `decisionAction`, `changed`, `archived`, `archiveId`), approximate token counts using Pi's `ceil(chars / 4)` heuristic (`rawTokens`, `finalTokens`, `savedTokens`), character counts, tool metadata, and duration. Commands and decision reasons are best-effort redacted before logging.

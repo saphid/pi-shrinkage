@@ -118,12 +118,14 @@ export async function processToolResult(config, archive, metadata, rawText, ctx,
     stats.seen++;
     const command = commandFromInput(metadata.input);
     const rawSource = resolveCompleteRawText(rawText, details, metadata.toolName);
+    const sessionId = sessionIdFromContext(ctx);
     stats.rawChars += rawSource.text.length;
     const logRun = (input) => {
         const tokens = makeTokenCounts(input.rawChars, input.finalChars);
         runLog?.write({
             ...input,
             ...tokens,
+            sessionId,
             toolName: metadata.toolName,
             toolCallId: metadata.toolCallId,
             command,
@@ -209,6 +211,14 @@ export async function processToolResult(config, archive, metadata, rawText, ctx,
     stats.changed++;
     stats.lastStrategy = strategy;
     return { finalText, archive: archiveHandle, rtk, decision, strategy };
+}
+function sessionIdFromContext(ctx) {
+    try {
+        return ctx?.sessionManager.getSessionId();
+    }
+    catch {
+        return undefined;
+    }
 }
 function resolveCompleteRawText(displayText, details, toolName) {
     const fullOutputPath = details && typeof details === "object" ? details.fullOutputPath : undefined;

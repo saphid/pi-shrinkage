@@ -152,12 +152,14 @@ export async function processToolResult(
 	stats.seen++;
 	const command = commandFromInput(metadata.input);
 	const rawSource = resolveCompleteRawText(rawText, details, metadata.toolName);
+	const sessionId = sessionIdFromContext(ctx);
 	stats.rawChars += rawSource.text.length;
-	const logRun = (input: Omit<ShrinkageRunLogRecord, "timestamp" | "toolName" | "toolCallId" | "command" | "rawComplete" | "rawTokens" | "finalTokens" | "savedTokens" | "durationMs">) => {
+	const logRun = (input: Omit<ShrinkageRunLogRecord, "timestamp" | "sessionId" | "toolName" | "toolCallId" | "command" | "rawComplete" | "rawTokens" | "finalTokens" | "savedTokens" | "durationMs">) => {
 		const tokens = makeTokenCounts(input.rawChars, input.finalChars);
 		runLog?.write({
 			...input,
 			...tokens,
+			sessionId,
 			toolName: metadata.toolName,
 			toolCallId: metadata.toolCallId,
 			command,
@@ -248,6 +250,14 @@ export async function processToolResult(
 	stats.changed++;
 	stats.lastStrategy = strategy;
 	return { finalText, archive: archiveHandle, rtk, decision, strategy };
+}
+
+function sessionIdFromContext(ctx: ExtensionContext | undefined): string | undefined {
+	try {
+		return ctx?.sessionManager.getSessionId();
+	} catch {
+		return undefined;
+	}
 }
 
 function resolveCompleteRawText(displayText: string, details: unknown, toolName: string): { text: string; complete: boolean } {

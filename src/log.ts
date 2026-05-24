@@ -7,6 +7,7 @@ import { truncateChars } from "./text.js";
 
 export interface ShrinkageRunLogRecord {
 	timestamp?: string;
+	sessionId?: string;
 	toolName: string;
 	toolCallId: string;
 	command?: string;

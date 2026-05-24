@@ -225,7 +225,7 @@ test("processToolResult logs action and token counts", async () => {
 			store,
 			{ toolName: "bash", toolCallId: "log-call", input: { command: `curl -H 'Authorization: Bearer ${longSecret}' https://example.test && npm test` } },
 			raw,
-			undefined,
+			{ sessionManager: { getSessionId: () => "session-123" } } as any,
 			undefined,
 			undefined,
 			runLog,
@@ -234,6 +234,7 @@ test("processToolResult logs action and token counts", async () => {
 		const records = readFileSync(join(dir, "runs.jsonl"), "utf8").trim().split("\n").map((line) => JSON.parse(line));
 		assert.equal(records.length, 1);
 		assert.equal(records[0].action, "shrunk");
+		assert.equal(records[0].sessionId, "session-123");
 		assert.equal(records[0].toolName, "bash");
 		assert.equal(records[0].decisionReason, "Policy model unavailable; using deterministic RTK-style reduction.");
 		assert.match(records[0].command, /REDACTED_TOKEN/);
