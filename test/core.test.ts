@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
-import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { ArchiveStore } from "../src/archive.js";
-import { DEFAULT_CONFIG, normalizeConfig, parseModelRef, toolEnabled } from "../src/config.js";
+import { ArchiveStore, makeArchiveId } from "../src/archive.js";
+import { DEFAULT_CONFIG, loadConfig, normalizeConfig, parseModelRef, toolEnabled } from "../src/config.js";
 import { RunLogStore } from "../src/log.js";
 import { processToolResult } from "../src/index.js";
 import { reduceDeterministic, stripAnsi } from "../src/rtk.js";
@@ -17,13 +17,44 @@ test("config normalizes defaults and model refs", () => {
 	assert.equal(toolEnabled("bash", config), true);
 	assert.equal(toolEnabled("read", config), false);
 	const defaults = normalizeConfig({ archivePrivacy: "off" });
+	assert.equal(DEFAULT_CONFIG.archivePrivacy, "redact");
 	assert.equal(defaults.archiveRaw, true);
 	assert.equal(defaults.logRuns, true);
 	assert.equal(defaults.logFile, ".pi-shrinkage/runs.jsonl");
+	const unsafePaths = normalizeConfig({ archiveDir: "/tmp/leak", logFile: "../runs.jsonl" });
+	assert.equal(unsafePaths.archiveDir, ".pi-shrinkage/archive");
+	assert.equal(unsafePaths.logFile, ".pi-shrinkage/runs.jsonl");
+	assert.equal(normalizeConfig({ logFile: ".pi-shrinkage" }).logFile, ".pi-shrinkage/runs.jsonl");
+	assert.equal(normalizeConfig({ archivePrivacy: "redacted" as any }).archivePrivacy, "redact");
 	assert.equal(toolEnabled("readability_score", normalizeConfig({ tools: ["read"] })), false);
 	assert.equal(toolEnabled("mcp__server__tool", normalizeConfig({ tools: ["mcp__"] })), true);
 	assert.equal(toolEnabled("custom_fetch", normalizeConfig({ tools: ["custom_*"] })), true);
 	assert.deepEqual(parseModelRef("google/gemini-2.5-flash-lite"), { provider: "google", id: "gemini-2.5-flash-lite" });
+});
+
+test("loadConfig does not let project config weaken privacy", () => {
+	const dir = mkdtempSync(join(tmpdir(), "governor-config-"));
+	const oldHome = process.env.HOME;
+	try {
+		process.env.HOME = dir;
+		mkdirSync(join(dir, ".pi", "agent"), { recursive: true });
+		writeFileSync(join(dir, ".pi", "agent", "pi-shrinkage.json"), JSON.stringify({ archiveRaw: false, dryRun: true }));
+		writeFileSync(
+			join(dir, ".pi", "pi-shrinkage.json"),
+			JSON.stringify({ archivePrivacy: "raw", archiveRaw: true, redactPolicyInput: false, model: "evil/model", logFile: "../../leak.jsonl", dryRun: false }),
+		);
+		const config = loadConfig(dir);
+		assert.equal(config.archivePrivacy, "redact");
+		assert.equal(config.archiveRaw, false);
+		assert.equal(config.redactPolicyInput, true);
+		assert.equal(config.model, undefined);
+		assert.equal(config.logFile, ".pi-shrinkage/runs.jsonl");
+		assert.equal(config.dryRun, true);
+	} finally {
+		if (oldHome === undefined) delete process.env.HOME;
+		else process.env.HOME = oldHome;
+		rmSync(dir, { recursive: true, force: true });
+	}
 });
 
 test("extractText handles Pi text content arrays and objects", () => {
@@ -43,8 +74,40 @@ test("archive saves and fetches raw output by id and line range", () => {
 		assert.ok(handle);
 		const fetched = store.fetch(handle.id, { startLine: 2, endLine: 2 });
 		assert.equal(fetched?.rawText, "two");
+		assert.equal((statSync(handle.path).mode & 0o777), 0o600);
+		chmodSync(handle.path, 0o644);
+		const overwritten = store.save({ toolCallId: "call/1", toolName: "bash", command: "npm test", rawText: "one\ntwo\nthree" });
+		assert.ok(overwritten);
+		assert.equal((statSync(overwritten.path).mode & 0o777), 0o600);
 	} finally {
 		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+test("archive refuses symlinked shrinkage store paths", () => {
+	const dir = mkdtempSync(join(tmpdir(), "governor-symlink-"));
+	const outside = mkdtempSync(join(tmpdir(), "governor-outside-"));
+	try {
+		symlinkSync(outside, join(dir, ".pi-shrinkage"), "dir");
+		const store = new ArchiveStore(dir, normalizeConfig({ archiveDir: ".pi-shrinkage/archive" }));
+		assert.throws(() => store.save({ toolCallId: "call", toolName: "bash", command: "echo", rawText: "x".repeat(2000) }), /symlink/i);
+		rmSync(join(dir, ".pi-shrinkage"), { force: true });
+		mkdirSync(join(dir, ".pi-shrinkage", "archive"), { recursive: true });
+		const rawText = "x".repeat(2000);
+		const id = makeArchiveId("call", "bash", rawText);
+		const outsideMissing = join(outside, "missing.json");
+		symlinkSync(outsideMissing, join(dir, ".pi-shrinkage", "archive", `${id}.json`));
+		assert.throws(() => store.save({ toolCallId: "call", toolName: "bash", command: "echo", rawText }), /symlink/i);
+		assert.equal(existsSync(outsideMissing), false);
+		rmSync(join(dir, ".pi-shrinkage", "archive", `${id}.json`), { force: true });
+		rmSync(join(dir, ".pi-shrinkage", "archive", ".gitignore"), { force: true });
+		const outsideIgnore = join(outside, "archive-ignore");
+		symlinkSync(outsideIgnore, join(dir, ".pi-shrinkage", "archive", ".gitignore"));
+		assert.throws(() => store.save({ toolCallId: "call", toolName: "bash", command: "echo", rawText }), /symlink/i);
+		assert.equal(existsSync(outsideIgnore), false);
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+		rmSync(outside, { recursive: true, force: true });
 	}
 });
 
@@ -215,7 +278,7 @@ test("processToolResult dryRun does not archive or mutate", async () => {
 test("processToolResult logs action and token counts", async () => {
 	const dir = mkdtempSync(join(tmpdir(), "governor-log-"));
 	try {
-		const config = normalizeConfig({ archiveDir: "archive", logFile: "runs.jsonl", minCharsForRtk: 10 });
+		const config = normalizeConfig({ archiveDir: ".pi-shrinkage/archive", logFile: ".pi-shrinkage/runs.jsonl", minCharsForRtk: 10 });
 		const store = new ArchiveStore(dir, config);
 		const runLog = new RunLogStore(dir, config);
 		const raw = `${"PASS noise\n".repeat(200)}FAIL src/foo.test.ts\nExpected 1 actual 2\n`;
@@ -231,7 +294,10 @@ test("processToolResult logs action and token counts", async () => {
 			runLog,
 		);
 		assert.ok(result);
-		const records = readFileSync(join(dir, "runs.jsonl"), "utf8").trim().split("\n").map((line) => JSON.parse(line));
+		const logPath = join(dir, ".pi-shrinkage", "runs.jsonl");
+		assert.equal(existsSync(join(dir, ".gitignore")), false);
+		assert.equal(existsSync(join(dir, ".pi-shrinkage", ".gitignore")), true);
+		const records = readFileSync(logPath, "utf8").trim().split("\n").map((line) => JSON.parse(line));
 		assert.equal(records.length, 1);
 		assert.equal(records[0].action, "shrunk");
 		assert.equal(records[0].sessionId, "session-123");
@@ -260,8 +326,97 @@ test("processToolResult logs action and token counts", async () => {
 			savedTokens: 22,
 			durationMs: 1,
 		});
-		const manualRecord = JSON.parse(readFileSync(join(dir, "runs.jsonl"), "utf8").trim().split("\n").at(-1) ?? "{}");
+		const manualRecord = JSON.parse(readFileSync(logPath, "utf8").trim().split("\n").at(-1) ?? "{}");
+		assert.equal((statSync(logPath).mode & 0o777), 0o600);
 		assert.doesNotMatch(manualRecord.decisionReason, new RegExp(longSecret.slice(0, 40)));
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+test("run log refuses symlinked log file", () => {
+	const dir = mkdtempSync(join(tmpdir(), "governor-log-symlink-"));
+	const outside = join(dir, "outside.log");
+	try {
+		mkdirSync(join(dir, ".pi-shrinkage"), { recursive: true });
+		writeFileSync(outside, "before");
+		symlinkSync(outside, join(dir, ".pi-shrinkage", "runs.jsonl"));
+		const runLog = new RunLogStore(dir, normalizeConfig({ logFile: ".pi-shrinkage/runs.jsonl" }));
+		runLog.write({
+			toolName: "bash",
+			toolCallId: "symlink",
+			action: "shrunk",
+			changed: true,
+			archived: false,
+			rawComplete: true,
+			rawChars: 100,
+			finalChars: 10,
+			rawTokens: 25,
+			finalTokens: 3,
+			savedTokens: 22,
+			durationMs: 1,
+		});
+		assert.equal(readFileSync(outside, "utf8"), "before");
+		rmSync(join(dir, ".pi-shrinkage", "runs.jsonl"), { force: true });
+		const outsideMissing = join(dir, "missing.log");
+		symlinkSync(outsideMissing, join(dir, ".pi-shrinkage", "runs.jsonl"));
+		runLog.write({
+			toolName: "bash",
+			toolCallId: "dangling-symlink",
+			action: "shrunk",
+			changed: true,
+			archived: false,
+			rawComplete: true,
+			rawChars: 100,
+			finalChars: 10,
+			rawTokens: 25,
+			finalTokens: 3,
+			savedTokens: 22,
+			durationMs: 1,
+		});
+		assert.equal(existsSync(outsideMissing), false);
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+test("run log refuses dangling gitignore symlink", () => {
+	const dir = mkdtempSync(join(tmpdir(), "governor-log-ignore-symlink-"));
+	try {
+		mkdirSync(join(dir, ".pi-shrinkage"), { recursive: true });
+		const outsideMissing = join(dir, "outside-ignore");
+		symlinkSync(outsideMissing, join(dir, ".pi-shrinkage", ".gitignore"));
+		const runLog = new RunLogStore(dir, normalizeConfig({ logFile: ".pi-shrinkage/runs.jsonl" }));
+		runLog.write({
+			toolName: "bash",
+			toolCallId: "dangling-ignore-symlink",
+			action: "shrunk",
+			changed: true,
+			archived: false,
+			rawComplete: true,
+			rawChars: 100,
+			finalChars: 10,
+			rawTokens: 25,
+			finalTokens: 3,
+			savedTokens: 22,
+			durationMs: 1,
+		});
+		assert.equal(existsSync(outsideMissing), false);
+		assert.equal(existsSync(join(dir, ".pi-shrinkage", "runs.jsonl")), false);
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+test("processToolResult does not archive unchanged large results", async () => {
+	const dir = mkdtempSync(join(tmpdir(), "governor-no-hoard-"));
+	try {
+		const config = normalizeConfig({ archiveDir: ".pi-shrinkage/archive", minCharsForRtk: 10 });
+		const store = new ArchiveStore(dir, config);
+		const raw = Array.from({ length: 120 }, (_, index) => `export const value${index} = ${index};`).join("\n");
+		const result = await processToolResult(config, store, { toolName: "read", toolCallId: "source-read", input: { path: "src/file.ts" } }, raw);
+		assert.equal(result, undefined);
+		assert.equal(store.list().length, 0);
 	} finally {
 		rmSync(dir, { recursive: true, force: true });
 	}

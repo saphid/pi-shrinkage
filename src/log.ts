@@ -1,8 +1,8 @@
-import { appendFileSync, mkdirSync } from "node:fs";
-import { dirname } from "node:path";
+import { appendFileSync, chmodSync } from "node:fs";
 import type { GovernorConfig } from "./config.js";
 import { configPath } from "./config.js";
 import { redactLikelySecrets } from "./redact.js";
+import { ensurePrivateFileParent } from "./storage.js";
 import { truncateChars } from "./text.js";
 
 export interface ShrinkageRunLogRecord {
@@ -37,11 +37,16 @@ export class RunLogStore {
 		if (!this.config.logRuns) return;
 		try {
 			const path = configPath(this.cwd, this.config.logFile);
-			mkdirSync(dirname(path), { recursive: true });
+			ensurePrivateFileParent(path);
 			const command = record.command ? truncateChars(redactLikelySecrets(record.command).text, 500) : undefined;
 			const decisionReason = record.decisionReason ? truncateChars(redactLikelySecrets(record.decisionReason).text, 500) : undefined;
 			const line = JSON.stringify({ version: 1, ...record, timestamp: record.timestamp ?? new Date().toISOString(), command, decisionReason });
-			appendFileSync(path, `${line}\n`, "utf8");
+			appendFileSync(path, `${line}\n`, { encoding: "utf8", mode: 0o600 });
+			try {
+				chmodSync(path, 0o600);
+			} catch {
+				// Best-effort on platforms/filesystems that do not support POSIX modes.
+			}
 		} catch {
 			// Logging must never affect tool-result handling.
 		}

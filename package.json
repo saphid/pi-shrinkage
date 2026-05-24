@@ -2,14 +2,25 @@
   "name": "pi-shrinkage",
   "version": "0.1.0",
   "description": "Hybrid RTK-style tool-result pruning plus optional small-model policy for Pi coding agent.",
+  "homepage": "https://github.com/saphid/Pi-Shrinkage#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/saphid/Pi-Shrinkage.git"
+  },
+  "bugs": {
+    "url": "https://github.com/saphid/Pi-Shrinkage/issues"
+  },
   "type": "module",
   "main": "dist/src/index.js",
   "types": "dist/src/index.d.ts",
   "files": [
     "src",
     "dist/src",
+    "test",
+    "skills",
+    "assets",
     "README.md",
-    "implementation-notes.md"
+    "LICENSE"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
@@ -31,6 +42,9 @@
   "pi": {
     "extensions": [
       "./dist/src/index.js"
+    ],
+    "skills": [
+      "./skills"
     ]
   },
   "peerDependencies": {

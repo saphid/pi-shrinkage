@@ -148,31 +148,6 @@ export async function processToolResult(config, archive, metadata, rawText, ctx,
         logRun({ action: "dry_run_unchanged", changed: false, archived: false, rawChars: rawSource.text.length, finalChars: rawText.length });
         return undefined;
     }
-    let archiveHandle;
-    try {
-        archiveHandle = archive.save({
-            toolCallId: metadata.toolCallId,
-            toolName: metadata.toolName,
-            command,
-            rawText: rawSource.text,
-            input: metadata.input,
-        });
-        if (archiveHandle)
-            stats.archived++;
-    }
-    catch {
-        archiveHandle = undefined;
-        if (config.archiveRaw) {
-            stats.finalChars += rawText.length;
-            logRun({ action: "unchanged_archive_failed", changed: false, archived: false, rawChars: rawSource.text.length, finalChars: rawText.length });
-            return undefined;
-        }
-    }
-    if (config.archiveRaw && !archiveHandle) {
-        stats.finalChars += rawText.length;
-        logRun({ action: "unchanged_archive_unavailable", changed: false, archived: false, rawChars: rawSource.text.length, finalChars: rawText.length });
-        return undefined;
-    }
     const rtk = reduceDeterministic(rawSource.text, { toolName: metadata.toolName, input: metadata.input });
     let decision = fallbackDecision(rawSource.text, rtk.text, config.fallback);
     let strategy = `deterministic:${rtk.strategy}`;
@@ -190,11 +165,56 @@ export async function processToolResult(config, archive, metadata, rawText, ctx,
             strategy = `${strategy}+policy-failed`;
         }
     }
-    const finalText = decision.action === "keep" && rawSource.text !== rawText
+    const renderFinalText = (archiveHandle) => decision.action === "keep" && rawSource.text !== rawText
         ? `${rawText}\n\n[shrinkage: full raw output was already externalized/truncated and was not re-expanded into active context.${archiveHandle ? ` ${archiveHandle.hint}` : ""}]`
         : applyDecision({ decision, rawText: rawSource.text, rtkText: rtk.text, archive: archiveHandle, maxSummaryChars: config.maxSummaryChars });
+    let archiveHandle;
+    let finalText = renderFinalText();
+    let changed = finalText !== rawText;
+    if (changed && config.archiveRaw) {
+        try {
+            archiveHandle = archive.save({
+                toolCallId: metadata.toolCallId,
+                toolName: metadata.toolName,
+                command,
+                rawText: rawSource.text,
+                input: metadata.input,
+            });
+            if (archiveHandle)
+                stats.archived++;
+        }
+        catch {
+            stats.finalChars += rawText.length;
+            logRun({
+                action: "unchanged_archive_failed",
+                strategy,
+                decisionAction: decision.action,
+                decisionReason: decision.reason,
+                changed: false,
+                archived: false,
+                rawChars: rawSource.text.length,
+                finalChars: rawText.length,
+            });
+            return undefined;
+        }
+        if (!archiveHandle) {
+            stats.finalChars += rawText.length;
+            logRun({
+                action: "unchanged_archive_unavailable",
+                strategy,
+                decisionAction: decision.action,
+                decisionReason: decision.reason,
+                changed: false,
+                archived: false,
+                rawChars: rawSource.text.length,
+                finalChars: rawText.length,
+            });
+            return undefined;
+        }
+        finalText = renderFinalText(archiveHandle);
+        changed = finalText !== rawText;
+    }
     stats.finalChars += finalText.length;
-    const changed = !(config.dryRun || finalText === rawText);
     logRun({
         action: changed ? "shrunk" : "unchanged_same_text",
         strategy,

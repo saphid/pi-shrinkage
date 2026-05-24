@@ -47,6 +47,17 @@ test("policy input redacts likely secrets by default", () => {
 	assert.doesNotMatch(input.command, /abcdefghijklmnop/);
 	assert.doesNotMatch(input.rawText, /sk-abcdefghijklmnopqrstuvwxyz|hunter2|npm-token/);
 	assert.doesNotMatch(input.rtkText, /hunter2/);
+	const common = redactPolicyInputIfNeeded(
+		{
+			toolName: "bash",
+			command: "curl -H 'Authorization: Basic dXNlcjpwYXNzd29yZA==' -H 'Cookie: sessionid=supersecret' postgres://user:pass@example.test/db",
+			rawText: "DATABASE_URL=postgres://user:pass@example.test/db\nSet-Cookie: sid=secret; HttpOnly",
+			rtkText: '{"databaseUrl":"postgres://user:pass@example.test/db"}',
+			rtkStrategy: "none",
+		},
+		normalizeConfig({}),
+	);
+	assert.doesNotMatch(`${common.command}\n${common.rawText}\n${common.rtkText}`, /dXNlcjpwYXNzd29yZA|sessionid=supersecret|user:pass|sid=secret/);
 
 	const pem = "before\n-----BEGIN PRIVATE KEY-----\nline1\nline2\n-----END PRIVATE KEY-----\nafter";
 	const redactedPem = redactPolicyInputIfNeeded({ toolName: "read", command: "", rawText: pem, rtkText: pem, rtkStrategy: "none" }, normalizeConfig({}));

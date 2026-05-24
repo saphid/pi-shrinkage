@@ -14,16 +14,19 @@ type SecretPattern = { pattern: RegExp; replacement: string | ReplacementFn };
 const SECRET_PATTERNS: SecretPattern[] = [
 	{ pattern: /-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/g, replacement: redactMultilineSecret("REDACTED_PRIVATE_KEY") },
 	{ pattern: /\bBearer\s+[A-Za-z0-9._~+/=-]{16,}/gi, replacement: "Bearer [REDACTED_TOKEN]" },
+	{ pattern: /\bBasic\s+[A-Za-z0-9+/=]{12,}/gi, replacement: "Basic [REDACTED_CREDENTIALS]" },
+	{ pattern: /\b((?:Cookie|Set-Cookie)\s*:\s*)([^\r\n]+)/gi, replacement: "$1[REDACTED_COOKIE]" },
+	{ pattern: /\b([a-z][a-z0-9+.-]*:\/\/)([^\s/@:]+):([^\s/@]+)@/gi, replacement: "$1[REDACTED_CREDENTIALS]@" },
 	{ pattern: /\b(AKIA|ASIA)[A-Z0-9]{16}\b/g, replacement: "[REDACTED_AWS_ACCESS_KEY]" },
 	{ pattern: /\bgh[pousr]_[A-Za-z0-9_]{24,}\b/g, replacement: "[REDACTED_GITHUB_TOKEN]" },
 	{ pattern: /\bsk-[A-Za-z0-9_-]{24,}\b/g, replacement: "[REDACTED_OPENAI_KEY]" },
 	{ pattern: /\bxox[baprs]-[A-Za-z0-9-]{24,}\b/g, replacement: "[REDACTED_SLACK_TOKEN]" },
 	{
-		pattern: /\b((?=[A-Za-z_][A-Za-z0-9_-]*\s*[:=])(?=[A-Za-z0-9_-]*(?:api[_-]?key|access[_-]?token|auth[_-]?token|refresh[_-]?token|client[_-]?secret|secret|password|passwd|pwd|token))[A-Za-z_][A-Za-z0-9_-]*\s*[:=]\s*)([^\s'\"`,;]+|'[^']+'|"[^"]+")/gi,
+		pattern: /\b((?=[A-Za-z_][A-Za-z0-9_-]*\s*[:=])(?=[A-Za-z0-9_-]*(?:api[_-]?key|access[_-]?token|auth[_-]?token|refresh[_-]?token|client[_-]?secret|secret|password|passwd|pwd|token|database[_-]?url|db[_-]?url|postgres(?:ql)?[_-]?url|mysql[_-]?url|redis[_-]?url|mongo(?:db)?[_-]?(?:uri|url)|connection[_-]?string))[A-Za-z_][A-Za-z0-9_-]*\s*[:=]\s*)([^\s'\"`,;]+|'[^']+'|"[^"]+")/gi,
 		replacement: (match, prefix) => preserveLineCount(match, `${prefix}[REDACTED_SECRET]`),
 	},
 	{
-		pattern: /("[^"]*(?:api[_-]?key|access[_-]?token|auth[_-]?token|refresh[_-]?token|client[_-]?secret|secret|password|passwd|pwd|token)[^"]*"\s*:\s*")([^"]+)(")/gi,
+		pattern: /("[^"]*(?:api[_-]?key|access[_-]?token|auth[_-]?token|refresh[_-]?token|client[_-]?secret|secret|password|passwd|pwd|token|database[_-]?url|db[_-]?url|postgres(?:ql)?[_-]?url|mysql[_-]?url|redis[_-]?url|mongo(?:db)?[_-]?(?:uri|url)|connection[_-]?string)[^"]*"\s*:\s*")([^"]+)(")/gi,
 		replacement: (match, prefix, _secret, suffix) => preserveLineCount(match, `${prefix}[REDACTED_SECRET]${suffix}`),
 	},
 	{
@@ -95,5 +98,5 @@ function preserveLineCount(match: string, replacement: string): string {
 }
 
 function isSensitiveKey(key: string): boolean {
-	return /^(authorization|cookie|set-cookie)$/i.test(key) || /(?:^|[_-])(?:api[_-]?key|access[_-]?token|auth[_-]?token|refresh[_-]?token|client[_-]?secret|secret|password|passwd|pwd|token)(?:[_-]|$)/i.test(key);
+	return /^(authorization|cookie|set-cookie)$/i.test(key) || /(?:^|[_-])(?:api[_-]?key|access[_-]?token|auth[_-]?token|refresh[_-]?token|client[_-]?secret|secret|password|passwd|pwd|token|database[_-]?url|db[_-]?url|postgres(?:ql)?[_-]?url|mysql[_-]?url|redis[_-]?url|mongo(?:db)?[_-]?(?:uri|url)|connection[_-]?string)(?:[_-]|$)/i.test(key);
 }

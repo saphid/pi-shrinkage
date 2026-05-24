@@ -1,9 +1,10 @@
-import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, unlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, readFileSync, readdirSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { basename, join, resolve } from "node:path";
 import type { GovernorConfig } from "./config.js";
 import { configPath } from "./config.js";
 import { redactLikelySecrets, redactLikelySecretsInValue } from "./redact.js";
+import { assertNotSymlink, ensurePrivateDirectory } from "./storage.js";
 import { lineSlice, truncateChars } from "./text.js";
 
 export interface ArchiveRecord {
@@ -56,14 +57,20 @@ export class ArchiveStore {
 			redactionCount: (textRedaction?.count ?? 0) + (commandRedaction?.count ?? 0) + (inputRedaction?.count ?? 0),
 		};
 		const dir = configPath(this.cwd, this.config.archiveDir);
-		mkdirSync(dir, { recursive: true });
+		ensurePrivateDirectory(dir);
 		try {
 			this.enforceRetention(dir);
 		} catch {
 			// Retention cleanup must not prevent fresh archive writes.
 		}
 		const path = join(dir, `${id}.json`);
-		writeFileSync(path, JSON.stringify(fullRecord, null, 2));
+		assertNotSymlink(path);
+		writeFileSync(path, JSON.stringify(fullRecord, null, 2), { mode: 0o600 });
+		try {
+			chmodSync(path, 0o600);
+		} catch {
+			// Best-effort on platforms/filesystems that do not support POSIX modes.
+		}
 		this.records.set(id, fullRecord);
 		try {
 			this.enforceRetention(dir, `${id}.json`);

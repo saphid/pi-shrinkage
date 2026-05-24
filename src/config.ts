@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { join, resolve } from "node:path";
+import { isAbsolute, join, resolve } from "node:path";
 
 export type GovernorFallback = "raw" | "rtk";
 export type ArchivePrivacy = "raw" | "redact" | "off";
@@ -43,7 +43,7 @@ export const DEFAULT_CONFIG: GovernorConfig = {
 	enabled: true,
 	archiveRaw: true,
 	archiveDir: ".pi-shrinkage/archive",
-	archivePrivacy: "raw",
+	archivePrivacy: "redact",
 	archiveMaxFiles: 500,
 	archiveMaxAgeDays: 30,
 	archiveMaxBytes: 100 * 1024 * 1024,
@@ -65,13 +65,15 @@ export function loadConfig(cwd = process.cwd()): GovernorConfig {
 	const globalPath = join(homedir(), ".pi", "agent", "pi-shrinkage.json");
 	const legacyProjectPath = join(cwd, ".pi", "tool-result-governor.json");
 	const projectPath = join(cwd, ".pi", "pi-shrinkage.json");
-	return normalizeConfig({
+	const globalConfig = normalizeConfig({
 		...DEFAULT_CONFIG,
 		...readJsonIfPresent(legacyGlobalPath),
 		...readJsonIfPresent(globalPath),
+	});
+	return normalizeConfig(mergeProjectConfig(globalConfig, {
 		...readJsonIfPresent(legacyProjectPath),
 		...readJsonIfPresent(projectPath),
-	});
+	}));
 }
 
 export function normalizeConfig(input: Partial<GovernorConfig>): GovernorConfig {
@@ -81,14 +83,14 @@ export function normalizeConfig(input: Partial<GovernorConfig>): GovernorConfig 
 		...merged,
 		enabled: merged.enabled !== false,
 		archiveRaw: merged.archiveRaw !== false,
-		archiveDir: String(merged.archiveDir || DEFAULT_CONFIG.archiveDir),
+		archiveDir: safeStorePath(merged.archiveDir, DEFAULT_CONFIG.archiveDir, "directory"),
 		archivePrivacy,
 		archiveMaxFiles: nonNegativeInteger(merged.archiveMaxFiles, DEFAULT_CONFIG.archiveMaxFiles),
 		archiveMaxAgeDays: nonNegativeInteger(merged.archiveMaxAgeDays, DEFAULT_CONFIG.archiveMaxAgeDays),
 		archiveMaxBytes: nonNegativeInteger(merged.archiveMaxBytes, DEFAULT_CONFIG.archiveMaxBytes),
 		redactPolicyInput: merged.redactPolicyInput !== false,
 		logRuns: merged.logRuns !== false,
-		logFile: String(merged.logFile || DEFAULT_CONFIG.logFile),
+		logFile: safeStorePath(merged.logFile, DEFAULT_CONFIG.logFile, "file"),
 		minCharsForModel: positiveInteger(merged.minCharsForModel, DEFAULT_CONFIG.minCharsForModel),
 		minCharsForRtk: positiveInteger(merged.minCharsForRtk, DEFAULT_CONFIG.minCharsForRtk),
 		maxSummaryChars: positiveInteger(merged.maxSummaryChars, DEFAULT_CONFIG.maxSummaryChars),
@@ -102,6 +104,22 @@ export function normalizeConfig(input: Partial<GovernorConfig>): GovernorConfig 
 
 export function configPath(cwd: string, archiveDir: string): string {
 	return resolve(cwd, archiveDir);
+}
+
+function mergeProjectConfig(base: GovernorConfig, project: Partial<GovernorConfig>): Partial<GovernorConfig> {
+	const merged: Partial<GovernorConfig> = { ...base, ...project };
+	// Project configs are repo-controlled. Let them make Pi-Shrinkage stricter,
+	// but do not let an untrusted checkout weaken user/global privacy choices.
+	merged.enabled = base.enabled === false ? false : project.enabled !== false;
+	merged.archiveRaw = base.archiveRaw === false ? false : true;
+	merged.archivePrivacy = mostPrivateArchivePrivacy(base.archivePrivacy, project.archivePrivacy === undefined ? base.archivePrivacy : normalizeArchivePrivacy(project.archivePrivacy));
+	merged.redactPolicyInput = base.redactPolicyInput !== false ? true : project.redactPolicyInput !== true ? false : true;
+	merged.logRuns = base.logRuns === false ? false : project.logRuns !== false;
+	merged.dryRun = base.dryRun === true ? true : project.dryRun === true;
+	// Policy models are a user/global opt-in. A repository must not be able to
+	// start sending tool output to a model merely by adding .pi/pi-shrinkage.json.
+	merged.model = base.model;
+	return merged;
 }
 
 export function toolEnabled(toolName: string, config: GovernorConfig): boolean {
@@ -130,7 +148,22 @@ function readJsonIfPresent(path: string): Partial<GovernorConfig> {
 }
 
 function normalizeArchivePrivacy(value: unknown): ArchivePrivacy {
-	return value === "redact" || value === "off" ? value : "raw";
+	if (value === "raw" || value === "redact" || value === "off") return value;
+	return "redact";
+}
+
+function mostPrivateArchivePrivacy(a: ArchivePrivacy, b: ArchivePrivacy): ArchivePrivacy {
+	const rank: Record<ArchivePrivacy, number> = { raw: 0, redact: 1, off: 2 };
+	return rank[b] > rank[a] ? b : a;
+}
+
+function safeStorePath(value: unknown, fallback: string, kind: "directory" | "file"): string {
+	const text = String(value || fallback).trim().replace(/\\/g, "/");
+	const parts = text.split("/").filter(Boolean);
+	if (!text || isAbsolute(text) || /^[A-Za-z]:\//.test(text) || parts.includes("..")) return fallback;
+	if (kind === "directory" && (text === ".pi-shrinkage" || text.startsWith(".pi-shrinkage/"))) return text;
+	if (kind === "file" && text.startsWith(".pi-shrinkage/") && parts.length >= 2 && !text.endsWith("/")) return text;
+	return fallback;
 }
 
 function positiveInteger(value: unknown, fallback: number): number {
