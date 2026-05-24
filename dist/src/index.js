@@ -5,6 +5,7 @@ import { Type } from "@earendil-works/pi-ai";
 import { defineTool } from "@earendil-works/pi-coding-agent";
 import { ArchiveStore } from "./archive.js";
 import { loadConfig, toolEnabled } from "./config.js";
+import { writeDashboard } from "./dashboard.js";
 import { applyDecision } from "./decision.js";
 import { makeTokenCounts, RunLogStore } from "./log.js";
 import { decideWithSmallModel, fallbackDecision, shouldAskPolicy } from "./policy.js";
@@ -89,8 +90,26 @@ export default function toolResultGovernor(pi) {
             };
         },
     }));
-    const statusHandler = async (_args, ctx) => {
+    const statusHandler = async (args, ctx) => {
         refresh(ctx.cwd);
+        const command = args.trim().toLowerCase();
+        if (["dashboard", "dash", "report", "spa"].includes(command)) {
+            try {
+                const result = writeDashboard(ctx.cwd, config);
+                const lines = [
+                    `pi-shrinkage dashboard written:`,
+                    result.outputPath,
+                    `records=${result.parsedLines}/${result.totalLines} skipped=${result.skippedLines} truncated=${result.truncatedLines}`,
+                    `Open that file in a browser. It is a static SPA with embedded usage-log data.`,
+                ];
+                ctx.ui.notify(lines.join("\n"), "info");
+            }
+            catch (error) {
+                const message = error instanceof Error ? error.message : String(error);
+                ctx.ui.notify(`pi-shrinkage dashboard failed: ${message}`, "error");
+            }
+            return;
+        }
         const recent = archive.list(5);
         const saved = Math.max(stats.rawChars - stats.finalChars, 0);
         const lines = [
@@ -99,13 +118,14 @@ export default function toolResultGovernor(pi) {
             `chars raw=${stats.rawChars} final=${stats.finalChars} saved≈${saved}`,
             `model=${config.model ?? "none"} fallback=${config.fallback} last=${stats.lastStrategy ?? "none"}`,
             `run log: ${config.logRuns ? config.logFile : "disabled"}`,
+            `dashboard: /shrinkage dashboard`,
             `recent archives:`,
             ...recent.map((record) => `- ${record.id} ${record.toolName} ${record.rawChars} chars ${record.command}`),
         ];
         ctx.ui.notify(lines.join("\n"), "info");
     };
     pi.registerCommand("shrinkage", {
-        description: "Show pi-shrinkage status and recent archive entries",
+        description: "Show pi-shrinkage status. Use /shrinkage dashboard to write the usage-log SPA.",
         handler: statusHandler,
     });
     pi.registerCommand("governor", {

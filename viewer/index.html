@@ -1,0 +1,380 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>pi-shrinkage usage dashboard</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #080b12;
+      --panel: rgba(17, 24, 39, 0.78);
+      --panel-2: rgba(30, 41, 59, 0.72);
+      --line: rgba(148, 163, 184, 0.22);
+      --text: #e5edf8;
+      --muted: #94a3b8;
+      --teal: #22d3ee;
+      --green: #34d399;
+      --violet: #a78bfa;
+      --amber: #fbbf24;
+      --red: #fb7185;
+      --blue: #60a5fa;
+      --shadow: 0 24px 80px rgba(0, 0, 0, 0.35);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background:
+        radial-gradient(circle at 15% 5%, rgba(34, 211, 238, 0.18), transparent 30rem),
+        radial-gradient(circle at 85% 0%, rgba(167, 139, 250, 0.16), transparent 32rem),
+        linear-gradient(135deg, #05070d 0%, #0f172a 48%, #0b1120 100%);
+      color: var(--text);
+    }
+    header {
+      padding: 32px clamp(18px, 4vw, 54px) 16px;
+      display: grid;
+      gap: 14px;
+    }
+    .eyebrow { color: var(--teal); text-transform: uppercase; font-size: 12px; letter-spacing: 0.16em; font-weight: 800; }
+    h1 { margin: 0; font-size: clamp(34px, 6vw, 72px); line-height: 0.95; letter-spacing: -0.06em; }
+    .lede { margin: 0; max-width: 980px; color: #cbd5e1; font-size: clamp(16px, 2vw, 20px); line-height: 1.55; }
+    main { padding: 14px clamp(18px, 4vw, 54px) 44px; }
+    .toolbar, .card, .chart-card, .table-wrap {
+      border: 1px solid var(--line);
+      background: var(--panel);
+      border-radius: 24px;
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(18px);
+    }
+    .toolbar { padding: 16px; display: grid; gap: 14px; grid-template-columns: 1.4fr repeat(4, minmax(140px, 0.7fr)) auto; align-items: end; }
+    label { display: grid; gap: 7px; color: var(--muted); font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; }
+    input, select, button {
+      border: 1px solid rgba(148, 163, 184, 0.28);
+      background: rgba(15, 23, 42, 0.82);
+      color: var(--text);
+      border-radius: 14px;
+      padding: 11px 12px;
+      font: inherit;
+      outline: none;
+    }
+    button { cursor: pointer; font-weight: 800; background: linear-gradient(135deg, rgba(34, 211, 238, 0.22), rgba(167, 139, 250, 0.18)); }
+    button:hover, input:focus, select:focus { border-color: var(--teal); }
+    .file-drop {
+      border: 1px dashed rgba(34, 211, 238, 0.4);
+      border-radius: 18px;
+      padding: 12px;
+      color: var(--muted);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      justify-content: space-between;
+      background: rgba(8, 13, 24, 0.5);
+    }
+    .file-drop strong { color: var(--text); }
+    .file-drop.drag { border-color: var(--amber); background: rgba(251, 191, 36, 0.08); }
+    .stats { margin: 18px 0; display: grid; grid-template-columns: repeat(5, minmax(140px, 1fr)); gap: 14px; }
+    .card { padding: 18px; min-height: 118px; display: grid; align-content: space-between; }
+    .card .label { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: 0.1em; font-weight: 800; }
+    .card .value { font-size: clamp(26px, 4vw, 42px); font-weight: 900; letter-spacing: -0.05em; }
+    .card .hint { color: var(--muted); font-size: 13px; }
+    .grid { display: grid; grid-template-columns: 1.5fr 1fr; gap: 16px; }
+    .chart-card { padding: 18px; min-height: 360px; position: relative; }
+    .chart-head { display: flex; align-items: start; justify-content: space-between; gap: 16px; margin-bottom: 10px; }
+    h2 { margin: 0; font-size: 18px; letter-spacing: -0.02em; }
+    .sub { color: var(--muted); font-size: 13px; margin-top: 4px; }
+    canvas { width: 100%; height: 280px; display: block; }
+    .legend { display: flex; flex-wrap: wrap; gap: 10px; color: var(--muted); font-size: 12px; }
+    .dot { width: 10px; height: 10px; border-radius: 999px; display: inline-block; margin-right: 5px; }
+    .tooltip { position: fixed; pointer-events: none; z-index: 20; padding: 8px 10px; border-radius: 10px; background: rgba(2, 6, 23, 0.94); border: 1px solid var(--line); color: var(--text); font-size: 12px; display: none; max-width: 280px; box-shadow: var(--shadow); }
+    .table-wrap { margin-top: 16px; overflow: hidden; }
+    .table-head { padding: 16px 18px; display: flex; justify-content: space-between; gap: 12px; border-bottom: 1px solid var(--line); }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th, td { padding: 11px 12px; border-bottom: 1px solid rgba(148, 163, 184, 0.12); text-align: left; vertical-align: top; }
+    th { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; cursor: pointer; user-select: none; }
+    tr:hover td { background: rgba(34, 211, 238, 0.05); }
+    code { color: #bae6fd; }
+    .pill { display: inline-flex; padding: 4px 8px; border-radius: 999px; background: rgba(148, 163, 184, 0.12); color: #dbeafe; font-size: 12px; }
+    .empty { padding: 42px; color: var(--muted); text-align: center; }
+    @media (max-width: 1080px) { .toolbar, .grid, .stats { grid-template-columns: 1fr 1fr; } }
+    @media (max-width: 720px) { .toolbar, .grid, .stats { grid-template-columns: 1fr; } h1 { font-size: 42px; } }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="eyebrow">pi-shrinkage usage logs</div>
+    <h1>Where your context went.</h1>
+    <p class="lede">Drop in <code>.pi-shrinkage/runs.jsonl</code>, or generate this page with <code>/shrinkage dashboard</code>. The graphs show which tools are noisy, how many tokens were saved, and where the reducer is actually doing useful work.</p>
+  </header>
+  <main>
+    <section class="toolbar">
+      <label>Search <input id="search" placeholder="tool, action, strategy, command, session..." /></label>
+      <label>Tool <select id="toolFilter"><option value="">All tools</option></select></label>
+      <label>Action <select id="actionFilter"><option value="">All actions</option></select></label>
+      <label>Session <select id="sessionFilter"><option value="">All sessions</option></select></label>
+      <label>Changed <select id="changedFilter"><option value="">All</option><option value="true">Changed only</option><option value="false">Unchanged only</option></select></label>
+      <button id="reset">Reset</button>
+    </section>
+
+    <div class="file-drop" id="dropZone">
+      <span><strong>Load another log:</strong> drag a JSONL file here or choose one.</span>
+      <input id="fileInput" type="file" accept=".jsonl,.log,.txt,application/json" />
+    </div>
+
+    <section class="stats" id="stats"></section>
+
+    <section class="grid">
+      <div class="chart-card">
+        <div class="chart-head"><div><h2>Tokens over time</h2><div class="sub">raw vs returned tokens, grouped by time</div></div><div class="legend"><span><i class="dot" style="background:var(--teal)"></i>raw</span><span><i class="dot" style="background:var(--green)"></i>final</span><span><i class="dot" style="background:var(--amber)"></i>saved</span></div></div>
+        <canvas id="timeChart"></canvas>
+      </div>
+      <div class="chart-card">
+        <div class="chart-head"><div><h2>Savings by tool</h2><div class="sub">click a bar to filter</div></div></div>
+        <canvas id="toolChart"></canvas>
+      </div>
+      <div class="chart-card">
+        <div class="chart-head"><div><h2>Actions</h2><div class="sub">what pi-shrinkage decided to do</div></div></div>
+        <canvas id="actionChart"></canvas>
+      </div>
+      <div class="chart-card">
+        <div class="chart-head"><div><h2>Activity heatmap</h2><div class="sub">runs by weekday and hour</div></div></div>
+        <canvas id="heatChart"></canvas>
+      </div>
+    </section>
+
+    <section class="table-wrap">
+      <div class="table-head"><div><h2>Recent records</h2><div class="sub" id="recordCount"></div></div><button id="exportSummary">Copy summary</button></div>
+      <div id="table"></div>
+    </section>
+  </main>
+  <div class="tooltip" id="tooltip"></div>
+  <script id="embedded-data" type="application/json">{"records":[],"metadata":{}}</script>
+  <script>
+    const $ = (id) => document.getElementById(id);
+    const colors = ['#22d3ee', '#34d399', '#a78bfa', '#fbbf24', '#60a5fa', '#fb7185', '#f472b6', '#2dd4bf'];
+    const tooltip = $('tooltip');
+    let embedded = { records: [], metadata: {} };
+    try { embedded = JSON.parse($('embedded-data').textContent || '{}'); } catch {}
+    let allRecords = normalizeRecords(embedded.records || []);
+    let filtered = [];
+    let sortKey = 'timestamp';
+    let sortDir = -1;
+    let lastToolBars = [];
+
+    function normalizeRecords(records) {
+      return records.map((r, index) => ({
+        ...r,
+        _index: index,
+        timestamp: r.timestamp || r.createdAt || '',
+        _time: Date.parse(r.timestamp || r.createdAt || '') || 0,
+        rawTokens: Number(r.rawTokens) || 0,
+        finalTokens: Number(r.finalTokens) || 0,
+        savedTokens: Number(r.savedTokens) || Math.max((Number(r.rawTokens) || 0) - (Number(r.finalTokens) || 0), 0),
+        rawChars: Number(r.rawChars) || 0,
+        finalChars: Number(r.finalChars) || 0,
+        durationMs: Number(r.durationMs) || 0,
+        changed: Boolean(r.changed),
+        archived: Boolean(r.archived),
+        toolName: String(r.toolName || 'unknown'),
+        action: String(r.action || 'unknown'),
+        strategy: String(r.strategy || ''),
+        sessionId: r.sessionId ? String(r.sessionId) : '',
+        command: r.command ? String(r.command) : ''
+      })).sort((a, b) => a._time - b._time || a._index - b._index);
+    }
+
+    function fmt(n) { return Intl.NumberFormat(undefined, { maximumFractionDigits: 0 }).format(Number(n) || 0); }
+    function pct(n) { return `${(Number(n) || 0).toFixed(1)}%`; }
+    function short(s, n = 14) { s = String(s || ''); return s.length > n ? `${s.slice(0, n)}…` : s; }
+    function dateLabel(ts) { return ts ? new Date(ts).toLocaleString() : 'no timestamp'; }
+    function sum(records, key) { return records.reduce((acc, r) => acc + (Number(r[key]) || 0), 0); }
+    function groupBy(records, keyFn) { const m = new Map(); for (const r of records) { const k = keyFn(r); if (!m.has(k)) m.set(k, []); m.get(k).push(r); } return m; }
+
+    function populateFilters() {
+      setOptions($('toolFilter'), [...new Set(allRecords.map(r => r.toolName))].sort(), 'All tools');
+      setOptions($('actionFilter'), [...new Set(allRecords.map(r => r.action))].sort(), 'All actions');
+      setOptions($('sessionFilter'), [...new Set(allRecords.map(r => r.sessionId).filter(Boolean))].sort(), 'All sessions', short);
+    }
+    function setOptions(select, values, allLabel, labelFn = (x) => x) {
+      const previous = select.value;
+      select.innerHTML = `<option value="">${allLabel}</option>` + values.map(v => `<option value="${escapeHtml(v)}">${escapeHtml(labelFn(v))}</option>`).join('');
+      if (values.includes(previous)) select.value = previous;
+    }
+
+    function applyFilters() {
+      const q = $('search').value.trim().toLowerCase();
+      const tool = $('toolFilter').value;
+      const action = $('actionFilter').value;
+      const session = $('sessionFilter').value;
+      const changed = $('changedFilter').value;
+      filtered = allRecords.filter(r => {
+        if (tool && r.toolName !== tool) return false;
+        if (action && r.action !== action) return false;
+        if (session && r.sessionId !== session) return false;
+        if (changed && String(r.changed) !== changed) return false;
+        if (q) {
+          const hay = `${r.toolName} ${r.action} ${r.strategy} ${r.command} ${r.sessionId} ${r.decisionAction || ''}`.toLowerCase();
+          if (!hay.includes(q)) return false;
+        }
+        return true;
+      });
+      render();
+    }
+
+    function render() {
+      renderStats(filtered);
+      drawTimeChart($('timeChart'), filtered);
+      drawToolChart($('toolChart'), filtered);
+      drawDonut($('actionChart'), aggregate(filtered, r => r.action, r => 1));
+      drawHeatmap($('heatChart'), filtered);
+      renderTable(filtered);
+    }
+
+    function renderStats(records) {
+      const raw = sum(records, 'rawTokens');
+      const final = sum(records, 'finalTokens');
+      const saved = sum(records, 'savedTokens');
+      const changed = records.filter(r => r.changed).length;
+      const archived = records.filter(r => r.archived).length;
+      const ratio = raw ? saved / raw * 100 : 0;
+      const cards = [
+        ['Runs', fmt(records.length), `${fmt(allRecords.length)} loaded`],
+        ['Saved tokens', fmt(saved), `${pct(ratio)} of raw tokens`],
+        ['Raw → final', `${fmt(raw)} → ${fmt(final)}`, 'estimated with chars / 4'],
+        ['Changed', fmt(changed), `${pct(records.length ? changed / records.length * 100 : 0)} of filtered runs`],
+        ['Archived', fmt(archived), 'recoverable reductions']
+      ];
+      $('stats').innerHTML = cards.map(([label, value, hint]) => `<div class="card"><div class="label">${label}</div><div class="value">${value}</div><div class="hint">${hint}</div></div>`).join('');
+    }
+
+    function aggregate(records, keyFn, valueFn) {
+      const out = new Map();
+      for (const r of records) out.set(keyFn(r), (out.get(keyFn(r)) || 0) + valueFn(r));
+      return [...out.entries()].sort((a, b) => b[1] - a[1]);
+    }
+
+    function setupCanvas(canvas) {
+      const ratio = window.devicePixelRatio || 1;
+      const rect = canvas.getBoundingClientRect();
+      canvas.width = Math.max(1, Math.floor(rect.width * ratio));
+      canvas.height = Math.max(1, Math.floor(rect.height * ratio));
+      const ctx = canvas.getContext('2d');
+      ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+      return { ctx, w: rect.width, h: rect.height };
+    }
+    function clear(ctx, w, h) { ctx.clearRect(0, 0, w, h); }
+    function axes(ctx, w, h, pad) { ctx.strokeStyle = 'rgba(148,163,184,.22)'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(pad, pad); ctx.lineTo(pad, h - pad); ctx.lineTo(w - pad, h - pad); ctx.stroke(); }
+    function noData(ctx, w, h) { ctx.fillStyle = '#94a3b8'; ctx.textAlign = 'center'; ctx.font = '14px sans-serif'; ctx.fillText('No records match the current filters.', w / 2, h / 2); }
+
+    function bucketTime(records) {
+      if (!records.length) return [];
+      const min = Math.min(...records.map(r => r._time).filter(Boolean));
+      const max = Math.max(...records.map(r => r._time).filter(Boolean));
+      const span = Math.max(max - min, 1);
+      const step = span <= 48 * 3600e3 ? 3600e3 : span <= 45 * 24 * 3600e3 ? 24 * 3600e3 : 7 * 24 * 3600e3;
+      const map = new Map();
+      for (const r of records) {
+        const key = Math.floor((r._time || min) / step) * step;
+        const b = map.get(key) || { t: key, raw: 0, final: 0, saved: 0, count: 0 };
+        b.raw += r.rawTokens; b.final += r.finalTokens; b.saved += r.savedTokens; b.count++;
+        map.set(key, b);
+      }
+      return [...map.values()].sort((a, b) => a.t - b.t);
+    }
+
+    function drawTimeChart(canvas, records) {
+      const { ctx, w, h } = setupCanvas(canvas); clear(ctx, w, h); if (!records.length) return noData(ctx, w, h);
+      const pad = 38, buckets = bucketTime(records); axes(ctx, w, h, pad);
+      const maxY = Math.max(1, ...buckets.flatMap(b => [b.raw, b.final, b.saved]));
+      const x = i => pad + (buckets.length <= 1 ? 0.5 : i / (buckets.length - 1)) * (w - pad * 2);
+      const y = v => h - pad - (v / maxY) * (h - pad * 2);
+      const barW = Math.max(3, (w - pad * 2) / Math.max(buckets.length, 1) * 0.45);
+      buckets.forEach((b, i) => { ctx.fillStyle = 'rgba(251,191,36,.28)'; ctx.fillRect(x(i) - barW / 2, y(b.saved), barW, h - pad - y(b.saved)); });
+      line(buckets.map((b, i) => [x(i), y(b.raw)]), '#22d3ee');
+      line(buckets.map((b, i) => [x(i), y(b.final)]), '#34d399');
+      ctx.fillStyle = '#94a3b8'; ctx.font = '11px sans-serif'; ctx.textAlign = 'left'; ctx.fillText(fmt(maxY), 4, pad + 4); ctx.fillText('0', 10, h - pad);
+      canvas.onmousemove = ev => showNearest(ev, buckets.map((b, i) => ({ x: x(i), html: `<b>${new Date(b.t).toLocaleString()}</b><br>raw ${fmt(b.raw)} · final ${fmt(b.final)}<br>saved ${fmt(b.saved)} · runs ${fmt(b.count)}` })));
+      canvas.onmouseleave = hideTip;
+      function line(points, color) { ctx.strokeStyle = color; ctx.lineWidth = 2.5; ctx.beginPath(); points.forEach(([px, py], i) => i ? ctx.lineTo(px, py) : ctx.moveTo(px, py)); ctx.stroke(); points.forEach(([px, py]) => { ctx.fillStyle = color; ctx.beginPath(); ctx.arc(px, py, 3, 0, Math.PI * 2); ctx.fill(); }); }
+    }
+
+    function drawToolChart(canvas, records) {
+      const { ctx, w, h } = setupCanvas(canvas); clear(ctx, w, h); lastToolBars = []; if (!records.length) return noData(ctx, w, h);
+      const data = aggregate(records, r => r.toolName, r => r.savedTokens).slice(0, 10);
+      const max = Math.max(1, ...data.map(d => d[1])); const pad = 24; const row = (h - pad * 2) / Math.max(data.length, 1);
+      data.forEach(([tool, value], i) => {
+        const y = pad + i * row + row * 0.18; const barH = row * 0.55; const barW = (w - 150) * value / max;
+        ctx.fillStyle = colors[i % colors.length]; ctx.globalAlpha = 0.82; ctx.fillRect(122, y, barW, barH); ctx.globalAlpha = 1;
+        ctx.fillStyle = '#cbd5e1'; ctx.font = '12px sans-serif'; ctx.textAlign = 'right'; ctx.fillText(short(tool, 16), 114, y + barH * 0.68);
+        ctx.textAlign = 'left'; ctx.fillStyle = '#94a3b8'; ctx.fillText(fmt(value), 130 + barW, y + barH * 0.68);
+        lastToolBars.push({ tool, x: 122, y, w: barW, h: barH, value });
+      });
+      canvas.onclick = ev => { const p = pointer(canvas, ev); const hit = lastToolBars.find(b => p.x >= b.x && p.x <= b.x + b.w && p.y >= b.y && p.y <= b.y + b.h); if (hit) { $('toolFilter').value = hit.tool; applyFilters(); } };
+      canvas.onmousemove = ev => { const p = pointer(canvas, ev); const hit = lastToolBars.find(b => p.x >= b.x && p.x <= b.x + b.w && p.y >= b.y && p.y <= b.y + b.h); hit ? showTip(ev, `<b>${escapeHtml(hit.tool)}</b><br>${fmt(hit.value)} saved tokens`) : hideTip(); };
+      canvas.onmouseleave = hideTip;
+    }
+
+    function drawDonut(canvas, data) {
+      const { ctx, w, h } = setupCanvas(canvas); clear(ctx, w, h); if (!data.length) return noData(ctx, w, h);
+      const total = data.reduce((a, [, v]) => a + v, 0); const cx = w * 0.42, cy = h * 0.52, r = Math.min(w, h) * 0.32; let start = -Math.PI / 2;
+      data.slice(0, 8).forEach(([label, value], i) => { const a = value / total * Math.PI * 2; ctx.beginPath(); ctx.moveTo(cx, cy); ctx.arc(cx, cy, r, start, start + a); ctx.closePath(); ctx.fillStyle = colors[i % colors.length]; ctx.fill(); start += a; });
+      ctx.globalCompositeOperation = 'destination-out'; ctx.beginPath(); ctx.arc(cx, cy, r * 0.58, 0, Math.PI * 2); ctx.fill(); ctx.globalCompositeOperation = 'source-over';
+      ctx.fillStyle = '#e5edf8'; ctx.font = '800 24px sans-serif'; ctx.textAlign = 'center'; ctx.fillText(fmt(total), cx, cy + 8);
+      ctx.font = '12px sans-serif'; ctx.textAlign = 'left'; data.slice(0, 8).forEach(([label, value], i) => { const y = 36 + i * 24; ctx.fillStyle = colors[i % colors.length]; ctx.fillRect(w * 0.68, y - 10, 10, 10); ctx.fillStyle = '#cbd5e1'; ctx.fillText(`${short(label, 20)} ${fmt(value)}`, w * 0.68 + 16, y); });
+    }
+
+    function drawHeatmap(canvas, records) {
+      const { ctx, w, h } = setupCanvas(canvas); clear(ctx, w, h); if (!records.length) return noData(ctx, w, h);
+      const padL = 48, padT = 24, cellW = (w - padL - 10) / 24, cellH = (h - padT - 26) / 7;
+      const grid = Array.from({ length: 7 }, () => Array(24).fill(0));
+      for (const r of records) { const d = new Date(r._time || Date.now()); grid[d.getDay()][d.getHours()] += 1; }
+      const max = Math.max(1, ...grid.flat()); const days = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+      ctx.font = '11px sans-serif'; ctx.textAlign = 'right'; ctx.fillStyle = '#94a3b8'; days.forEach((d, i) => ctx.fillText(d, padL - 8, padT + i * cellH + cellH * .64));
+      for (let day = 0; day < 7; day++) for (let hour = 0; hour < 24; hour++) { const v = grid[day][hour]; const alpha = v ? 0.15 + 0.85 * v / max : 0.05; ctx.fillStyle = `rgba(34,211,238,${alpha})`; ctx.fillRect(padL + hour * cellW + 1, padT + day * cellH + 1, cellW - 2, cellH - 2); }
+      ctx.textAlign = 'center'; ctx.fillStyle = '#94a3b8'; [0, 6, 12, 18, 23].forEach(hh => ctx.fillText(String(hh), padL + hh * cellW + cellW/2, h - 6));
+    }
+
+    function renderTable(records) {
+      const sorted = [...records].sort((a, b) => compare(a, b, sortKey) * sortDir).slice(0, 250);
+      $('recordCount').textContent = `${fmt(records.length)} matching records; showing ${fmt(sorted.length)} most relevant rows`;
+      if (!sorted.length) { $('table').innerHTML = '<div class="empty">No records yet. Generate a few tool results, then run <code>/shrinkage dashboard</code> again or load a runs.jsonl file.</div>'; return; }
+      const headers = [['timestamp','Time'], ['toolName','Tool'], ['action','Action'], ['savedTokens','Saved'], ['rawTokens','Raw'], ['finalTokens','Final'], ['durationMs','ms'], ['command','Command']];
+      $('table').innerHTML = `<table><thead><tr>${headers.map(([k, label]) => `<th data-sort="${k}">${label}${sortKey === k ? (sortDir > 0 ? ' ↑' : ' ↓') : ''}</th>`).join('')}</tr></thead><tbody>${sorted.map(r => `<tr><td>${escapeHtml(dateLabel(r.timestamp))}</td><td><span class="pill">${escapeHtml(r.toolName)}</span></td><td>${escapeHtml(r.action)}</td><td>${fmt(r.savedTokens)}</td><td>${fmt(r.rawTokens)}</td><td>${fmt(r.finalTokens)}</td><td>${fmt(r.durationMs)}</td><td><code>${escapeHtml(short(r.command || r.strategy || '', 120))}</code></td></tr>`).join('')}</tbody></table>`;
+      document.querySelectorAll('th[data-sort]').forEach(th => th.onclick = () => { const k = th.dataset.sort; if (sortKey === k) sortDir *= -1; else { sortKey = k; sortDir = k === 'timestamp' ? -1 : 1; } renderTable(filtered); });
+    }
+    function compare(a, b, key) { const av = a[key], bv = b[key]; if (typeof av === 'number' || typeof bv === 'number') return (Number(av) || 0) - (Number(bv) || 0); return String(av || '').localeCompare(String(bv || '')); }
+
+    function pointer(canvas, ev) { const r = canvas.getBoundingClientRect(); return { x: ev.clientX - r.left, y: ev.clientY - r.top }; }
+    function showNearest(ev, items) { const p = pointer(ev.target, ev); let best = null, dist = Infinity; for (const item of items) { const d = Math.abs(item.x - p.x); if (d < dist) { best = item; dist = d; } } best && dist < 35 ? showTip(ev, best.html) : hideTip(); }
+    function showTip(ev, html) { tooltip.innerHTML = html; tooltip.style.left = `${ev.clientX + 12}px`; tooltip.style.top = `${ev.clientY + 12}px`; tooltip.style.display = 'block'; }
+    function hideTip() { tooltip.style.display = 'none'; }
+    function escapeHtml(value) { return String(value ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
+
+    async function loadText(text) {
+      const rows = [];
+      for (const line of text.split(/\r?\n/)) {
+        if (!line.trim()) continue;
+        try { rows.push(JSON.parse(line)); } catch {}
+      }
+      allRecords = normalizeRecords(rows);
+      populateFilters(); applyFilters();
+    }
+    $('fileInput').onchange = async ev => { const file = ev.target.files?.[0]; if (file) loadText(await file.text()); };
+    const drop = $('dropZone');
+    ['dragenter','dragover'].forEach(type => drop.addEventListener(type, ev => { ev.preventDefault(); drop.classList.add('drag'); }));
+    ['dragleave','drop'].forEach(type => drop.addEventListener(type, ev => { ev.preventDefault(); drop.classList.remove('drag'); }));
+    drop.addEventListener('drop', async ev => { const file = ev.dataTransfer.files?.[0]; if (file) loadText(await file.text()); });
+    ['search','toolFilter','actionFilter','sessionFilter','changedFilter'].forEach(id => $(id).addEventListener('input', applyFilters));
+    $('reset').onclick = () => { ['search','toolFilter','actionFilter','sessionFilter','changedFilter'].forEach(id => $(id).value = ''); applyFilters(); };
+    $('exportSummary').onclick = async () => {
+      const raw = sum(filtered, 'rawTokens'), final = sum(filtered, 'finalTokens'), saved = sum(filtered, 'savedTokens');
+      const text = `pi-shrinkage summary\nrecords: ${filtered.length}\nrawTokens: ${raw}\nfinalTokens: ${final}\nsavedTokens: ${saved}\nsavedPercent: ${raw ? (saved/raw*100).toFixed(1) : '0.0'}%`;
+      await navigator.clipboard?.writeText(text).catch(() => {});
+      $('exportSummary').textContent = 'Copied'; setTimeout(() => $('exportSummary').textContent = 'Copy summary', 900);
+    };
+    window.addEventListener('resize', () => render());
+    populateFilters(); applyFilters();
+  </script>
+</body>
+</html>

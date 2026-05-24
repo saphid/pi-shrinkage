@@ -58,6 +58,8 @@ User/global-only privacy opt-ins:
 
 Do not recommend global-only options unless the user understands the privacy/cost tradeoff.
 
-## Run logs
+## Run logs and dashboard
 
 Run logs are JSONL at `.pi-shrinkage/runs.jsonl` by default. They include `sessionId`, tool id/name, action, strategy, archive id, raw/final estimated tokens, saved tokens, and duration. They intentionally do not contain raw tool output.
+
+Use `/shrinkage dashboard` to write `.pi-shrinkage/dashboard/index.html`, a static SPA with interactive usage graphs. Use it when the user wants to understand which tools are spending or saving the most context.

@@ -31,7 +31,7 @@ export function assertNotSymlink(path) {
         throw error;
     }
 }
-function assertNoSymlinkInStorePath(target) {
+export function assertNoSymlinkInStorePath(target) {
     const absolute = resolve(target);
     const parsed = parse(absolute);
     const parts = absolute.slice(parsed.root.length).split(/[\\/]+/).filter(Boolean);

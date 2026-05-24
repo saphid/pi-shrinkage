@@ -14,6 +14,7 @@ pi-shrinkage is a **Pi package**. It ships:
 
 - a Pi extension: `dist/src/index.js`
 - a Pi skill: `skills/pi-shrinkage/SKILL.md`
+- a static usage dashboard SPA: `viewer/index.html`
 - a recovery tool: `tool_result_fetch`
 - two commands: `/shrinkage` and `/governor` as an old compatibility alias
 
@@ -215,13 +216,43 @@ Each line records what happened:
 
 The log is for auditing the mechanism. It should not contain raw tool output.
 
+## Usage dashboard
+
+The run log is useful, but staring at JSONL is not. Generate the static dashboard SPA for the current project with:
+
+```text
+/shrinkage dashboard
+```
+
+That writes:
+
+```text
+.pi-shrinkage/dashboard/index.html
+```
+
+Open it in a browser. It embeds the latest usage-log records and gives you interactive graphs for:
+
+- raw vs returned tokens over time
+- saved tokens by tool
+- action mix (`shrunk`, unchanged paths, archive failures, etc.)
+- activity by weekday/hour
+- recent records with filtering and sorting
+
+The same `viewer/index.html` can also be opened directly and used with a dragged-in `runs.jsonl` file.
+
 ## Commands
 
 ```text
 /shrinkage
 ```
 
-Shows whether the extension is enabled, recent archive entries, rough saved character counts, model state, and the run log path.
+Shows whether the extension is enabled, recent archive entries, rough saved character counts, model state, the run log path, and the dashboard hint.
+
+```text
+/shrinkage dashboard
+```
+
+Writes the usage dashboard SPA from `.pi-shrinkage/runs.jsonl`.
 
 ```text
 /governor
