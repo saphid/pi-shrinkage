@@ -2,42 +2,160 @@
 
 # Pi-Shrinkage
 
-Context shrinkage and tool-result pruning for the Pi coding agent.
+A Pi extension that keeps huge tool results from eating the whole context window.
 
-Pi-Shrinkage runs cheap deterministic reducers first, then can optionally ask a user-configured small model whether a large/ambiguous result should be kept, summarized, line-preserved, dismissed, or narrowed. Reduced outputs include recovery hints, and the package ships a `tool_result_fetch` tool so the agent can pull the archived result back when the reduction is not enough.
+It sits on Pi's `tool_result` hook, looks at noisy outputs from tools like `bash`, `grep`, `find`, `read`, and web/search tools, and replaces the worst of them with smaller, more useful views. When it does prune something with archiving enabled, it keeps an archive first and adds a recovery hint so the agent can fetch the raw or redacted slice back with `tool_result_fetch`.
 
-## What ships in this package
+The point is not to be clever. The point is to stop dumping 80,000 lines of logs into the model when the useful part is the failing test, the changed file, or the three paths that matter.
 
-- Pi extension: `dist/src/index.js`
-- Pi skill: `skills/pi-shrinkage/SKILL.md`
-- Recovery tool: `tool_result_fetch`
-- Commands: `/shrinkage` and compatibility alias `/governor`
+## What you get
 
-The repo does **not** vendor unrelated global/user skills. It only includes its own Pi-Shrinkage skill.
+Pi-Shrinkage is a **Pi package**. It ships:
+
+- a Pi extension: `dist/src/index.js`
+- a Pi skill: `skills/pi-shrinkage/SKILL.md`
+- a recovery tool: `tool_result_fetch`
+- two commands: `/shrinkage` and `/governor` as an old compatibility alias
+
+It is not a standalone app. You install it into Pi, restart or reload Pi, and it runs in the background.
 
 ## Install
 
+From npm, once published:
+
 ```bash
 pi install npm:pi-shrinkage
-# or during development
+```
+
+From a local checkout:
+
+```bash
+pi install /path/to/Pi-Shrinkage
+```
+
+For one temporary Pi run while developing:
+
+```bash
 pi -e /path/to/Pi-Shrinkage
-# or from a local tarball
+```
+
+From a tarball:
+
+```bash
 pi install /tmp/pi-shrinkage-0.1.0.tgz
 ```
 
-## What it does
+Check that Pi sees it:
 
-- Intercepts `tool_result` for common verbose tools (`bash`, `read`, `grep`, `find`, `ls`, web/search/MCP-style tools).
-- Archives only when the active-context result will actually change, so unchanged large outputs are not needlessly hoarded.
-- Defaults to best-effort redacted archives under `.pi-shrinkage/archive/` with private file modes, local `.gitignore` safety files, and retention limits.
-- Applies RTK-style reducers for ANSI, logs, test/build output, git output, search/listings, and source reads.
-- Optionally calls a user/global configured small model as a JSON-only policy proxy for large or ambiguous results.
-- Registers `tool_result_fetch` so the agent can recover archived output by id/range when a reduction looks insufficient, suspicious, or missing exact lines.
-- Logs every governed tool-result decision to JSONL with `sessionId`, action, strategy, archive id, raw/final character counts, and estimated raw/final/saved token counts.
+```bash
+pi list
+```
+
+Then start a new Pi session or run `/reload`.
+
+## The short version
+
+Large tool output normally does this:
+
+1. the tool returns a wall of text
+2. the model burns context reading it
+3. the important part may still be buried somewhere in the middle
+
+Pi-Shrinkage changes that flow:
+
+1. archive the result, usually redacted by default
+2. run deterministic reducers for common output shapes
+3. optionally ask a small model for a policy decision
+4. return the smaller view to the agent
+5. leave a `tool_result_fetch({ id })` hint when recovery is available
+
+So the agent keeps moving, but it still has a way to inspect the archived evidence when the reduced view is not enough.
+
+## What gets reduced
+
+The deterministic reducers are deliberately boring:
+
+- strip ANSI escape codes and terminal decoration
+- keep failing test output and cut passing noise
+- keep build/lint errors and file-line diagnostics
+- compact git status, logs, and diffs
+- group large grep/search results
+- collapse giant directory listings and `find` output
+- dedupe repeated lines
+- keep source reads exact when lossy compaction would be worse than the original
+
+If the reducer is unsure, it should prefer useful evidence over maximum shrinkage.
+
+## Optional policy model
+
+You can configure a small model to act as a policy proxy. It does not run by default.
+
+When enabled, Pi-Shrinkage still runs the deterministic reducer first, then asks the model to choose one of:
+
+- `keep`
+- `rtk`
+- `summarize`
+- `keep_lines`
+- `dismiss`
+- `ask_reread_narrower`
+
+This is intentionally a policy step, not a magic summarizer for everything. The model decides what shape is safe/useful. The extension still controls the recovery footer and fallback behavior.
+
+## Recovery
+
+When Pi-Shrinkage changes a tool result and an archive exists, the returned text includes a footer like:
+
+```text
+[shrinkage: Redacted raw output archived as call-abc123. If this reduction is insufficient, suspicious, or missing exact lines, call tool_result_fetch({ id: "call-abc123" }) ...]
+```
+
+The agent can then recover the archived result or a smaller slice:
+
+```js
+tool_result_fetch({ id: "call-abc123", startLine: 120, endLine: 180, maxChars: 30000 })
+```
+
+That recovery path is the safety valve. If the reduced view looks wrong, suspicious, or too vague, fetch the archive instead of guessing.
+
+## Privacy model
+
+This is the part that matters.
+
+Pruning without recovery is dangerous, but raw archives can contain secrets. Pi-Shrinkage defaults to the safer middle ground:
+
+```json
+{
+  "archiveRaw": true,
+  "archivePrivacy": "redact",
+  "redactPolicyInput": true
+}
+```
+
+Archive modes:
+
+- `"redact"` — default. Stores best-effort redacted archives. Good public default. Not exact recovery for secrets.
+- `"raw"` — exact recovery. Also means raw tool output may be written to disk. Use this only if you actually want that.
+- `"off"` — no archive writes. Large outputs are left unchanged unless you explicitly opt into pruning without recovery with `archiveRaw: false`.
+
+Repo-local config can make privacy stricter, but it cannot turn on raw archives, choose a policy model, disable policy-input redaction, or disable archive-before-prune safety by itself. Those are user/global opt-ins.
+
+Archives and logs are written under `.pi-shrinkage/`, with private file modes where the OS supports them. The extension also refuses symlinked store paths instead of following them out of the project.
 
 ## Configuration
 
-Create `.pi/pi-shrinkage.json` for project-safe tuning or `~/.pi/agent/pi-shrinkage.json` for user/global privacy opt-ins.
+Project-safe config goes here:
+
+```text
+.pi/pi-shrinkage.json
+```
+
+User/global config goes here:
+
+```text
+~/.pi/agent/pi-shrinkage.json
+```
+
+A reasonable default config:
 
 ```json
 {
@@ -55,38 +173,37 @@ Create `.pi/pi-shrinkage.json` for project-safe tuning or `~/.pi/agent/pi-shrink
   "minCharsForRtk": 1200,
   "maxSummaryChars": 3000,
   "fallback": "rtk",
-  "tools": ["bash", "read", "grep", "find", "ls", "web_search", "fetch_content"]
+  "tools": ["bash", "read", "grep", "find", "ls", "web_search", "fetch_content", "code_search", "mcp__"]
 }
 ```
 
-Raw archives and model policy are user/global opt-ins. A repo-local config can make privacy stricter, but it cannot by itself enable raw archive storage, disable policy-input redaction, disable archive-before-prune safety, or choose a policy model.
-
-User/global opt-in example:
+To opt into exact raw recovery globally:
 
 ```json
 {
-  "archivePrivacy": "raw",
+  "archivePrivacy": "raw"
+}
+```
+
+To enable the optional policy model globally:
+
+```json
+{
   "model": "google/gemini-2.5-flash-lite"
 }
 ```
 
-If `model` is omitted or unavailable, Pi-Shrinkage still runs deterministic reducers and falls back safely.
-
-## Safety model
-
-Pi-Shrinkage does not prune active-context evidence unless an archive was written first, unless you explicitly set `archiveRaw: false` in user/global config. Every archived reduction includes a footer such as `tool_result_fetch({ id: "...", startLine, endLine, maxChars })`, so the model can pull the archived result or a narrow slice if the reduced output is not good enough.
-
-Privacy modes:
-
-- `archivePrivacy: "redact"` — default. Stores best-effort redacted archives. Good public default; not exact recovery for secrets.
-- `archivePrivacy: "raw"` — exact recovery, but archived tool outputs may contain secrets. User/global opt-in only.
-- `archivePrivacy: "off"` — avoids archive writes and leaves large outputs unpruned by default.
-
-Retention is enforced with `archiveMaxFiles`, `archiveMaxAgeDays`, and `archiveMaxBytes`; set a limit to `0` to disable that specific dimension. Small-model policy prompts redact likely secrets by default via `redactPolicyInput: true`.
+If the model is missing or fails, Pi-Shrinkage falls back to deterministic reduction.
 
 ## Run log
 
-When `logRuns` is enabled, Pi-Shrinkage appends one JSON object per governed tool result to `logFile` (default `.pi-shrinkage/runs.jsonl`). The log does not include raw tool output. It records:
+Pi-Shrinkage writes a JSONL decision log by default:
+
+```text
+.pi-shrinkage/runs.jsonl
+```
+
+Each line records what happened:
 
 - `sessionId`
 - `toolName`, `toolCallId`, redacted/truncated `command`
@@ -96,6 +213,22 @@ When `logRuns` is enabled, Pi-Shrinkage appends one JSON object per governed too
 - `rawTokens`, `finalTokens`, `savedTokens` using Pi's `ceil(chars / 4)` estimate
 - `durationMs`
 
+The log is for auditing the mechanism. It should not contain raw tool output.
+
+## Commands
+
+```text
+/shrinkage
+```
+
+Shows whether the extension is enabled, recent archive entries, rough saved character counts, model state, and the run log path.
+
+```text
+/governor
+```
+
+Old alias for `/shrinkage`.
+
 ## Development
 
 ```bash
@@ -104,6 +237,12 @@ npm test
 npm audit --omit=dev
 npm pack --ignore-scripts --pack-destination /tmp
 ```
+
+The package publishes built `dist/src/*` files because Pi loads the extension from `dist/src/index.js`.
+
+## Status
+
+This is useful, but it is still context surgery. Treat reductions as a view, not as truth. If the exact line matters, fetch the archive.
 
 ## License
 
