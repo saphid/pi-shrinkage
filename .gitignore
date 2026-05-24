@@ -3,6 +3,5 @@ dist/
 .DS_Store
 *.log
 .governor/archive/
-.pi-shrinkage/archive/
-.pi-shrinkage/runs.jsonl
+.pi-shrinkage/
 .xbuild/
