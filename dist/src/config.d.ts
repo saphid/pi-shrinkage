@@ -1,8 +1,14 @@
 export type GovernorFallback = "raw" | "rtk";
+export type ArchivePrivacy = "raw" | "redact" | "off";
 export interface GovernorConfig {
     enabled: boolean;
     archiveRaw: boolean;
     archiveDir: string;
+    archivePrivacy: ArchivePrivacy;
+    archiveMaxFiles: number;
+    archiveMaxAgeDays: number;
+    archiveMaxBytes: number;
+    redactPolicyInput: boolean;
     minCharsForModel: number;
     minCharsForRtk: number;
     maxSummaryChars: number;

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { applyDecision, normalizeDecision, parseDecisionJson } from "../src/decision.js";
-import { fallbackDecision, shouldAskPolicy } from "../src/policy.js";
+import { fallbackDecision, redactPolicyInputIfNeeded, shouldAskPolicy } from "../src/policy.js";
 import { normalizeConfig } from "../src/config.js";
 
 test("policy decision JSON parses from fenced output", () => {
@@ -37,4 +37,23 @@ test("policy trigger skips when rtk already shrank enough", () => {
 	const config = normalizeConfig({ model: "google/gemini", minCharsForModel: 10, maxSummaryChars: 1000 });
 	assert.equal(shouldAskPolicy(config, "x".repeat(2000), "short"), false);
 	assert.equal(shouldAskPolicy(config, "x".repeat(2000), "y".repeat(1600)), true);
+});
+
+test("policy input redacts likely secrets by default", () => {
+	const input = redactPolicyInputIfNeeded(
+		{ toolName: "bash", command: "curl -H 'Authorization: Bearer abcdefghijklmnop'", rawText: "OPENAI_API_KEY=sk-abcdefghijklmnopqrstuvwxyz\nDB_PASSWORD=hunter2\nNPM_TOKEN=npm-token", rtkText: "password=hunter2", rtkStrategy: "none" },
+		normalizeConfig({}),
+	);
+	assert.doesNotMatch(input.command, /abcdefghijklmnop/);
+	assert.doesNotMatch(input.rawText, /sk-abcdefghijklmnopqrstuvwxyz|hunter2|npm-token/);
+	assert.doesNotMatch(input.rtkText, /hunter2/);
+
+	const pem = "before\n-----BEGIN PRIVATE KEY-----\nline1\nline2\n-----END PRIVATE KEY-----\nafter";
+	const redactedPem = redactPolicyInputIfNeeded({ toolName: "read", command: "", rawText: pem, rtkText: pem, rtkStrategy: "none" }, normalizeConfig({}));
+	assert.equal(redactedPem.rawText.split(/\r?\n/).length, pem.split(/\r?\n/).length);
+	assert.match(redactedPem.rawText, /after/);
+	const multiline = "before\nPASSWORD=\"line1\nline2\"\nafter";
+	const redactedMultiline = redactPolicyInputIfNeeded({ toolName: "read", command: "", rawText: multiline, rtkText: multiline, rtkStrategy: "none" }, normalizeConfig({}));
+	assert.equal(redactedMultiline.rawText.split(/\r?\n/).length, multiline.split(/\r?\n/).length);
+	assert.doesNotMatch(redactedMultiline.rawText, /line1|line2/);
 });

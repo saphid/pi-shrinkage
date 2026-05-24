@@ -3,11 +3,17 @@ import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 
 export type GovernorFallback = "raw" | "rtk";
+export type ArchivePrivacy = "raw" | "redact" | "off";
 
 export interface GovernorConfig {
 	enabled: boolean;
 	archiveRaw: boolean;
 	archiveDir: string;
+	archivePrivacy: ArchivePrivacy;
+	archiveMaxFiles: number;
+	archiveMaxAgeDays: number;
+	archiveMaxBytes: number;
+	redactPolicyInput: boolean;
 	minCharsForModel: number;
 	minCharsForRtk: number;
 	maxSummaryChars: number;
@@ -35,6 +41,11 @@ export const DEFAULT_CONFIG: GovernorConfig = {
 	enabled: true,
 	archiveRaw: true,
 	archiveDir: ".pi-shrinkage/archive",
+	archivePrivacy: "raw",
+	archiveMaxFiles: 500,
+	archiveMaxAgeDays: 30,
+	archiveMaxBytes: 100 * 1024 * 1024,
+	redactPolicyInput: true,
 	minCharsForModel: 8000,
 	minCharsForRtk: 1200,
 	maxSummaryChars: 3000,
@@ -61,11 +72,17 @@ export function loadConfig(cwd = process.cwd()): GovernorConfig {
 
 export function normalizeConfig(input: Partial<GovernorConfig>): GovernorConfig {
 	const merged = { ...DEFAULT_CONFIG, ...input };
+	const archivePrivacy = normalizeArchivePrivacy(merged.archivePrivacy);
 	return {
 		...merged,
 		enabled: merged.enabled !== false,
 		archiveRaw: merged.archiveRaw !== false,
 		archiveDir: String(merged.archiveDir || DEFAULT_CONFIG.archiveDir),
+		archivePrivacy,
+		archiveMaxFiles: nonNegativeInteger(merged.archiveMaxFiles, DEFAULT_CONFIG.archiveMaxFiles),
+		archiveMaxAgeDays: nonNegativeInteger(merged.archiveMaxAgeDays, DEFAULT_CONFIG.archiveMaxAgeDays),
+		archiveMaxBytes: nonNegativeInteger(merged.archiveMaxBytes, DEFAULT_CONFIG.archiveMaxBytes),
+		redactPolicyInput: merged.redactPolicyInput !== false,
 		minCharsForModel: positiveInteger(merged.minCharsForModel, DEFAULT_CONFIG.minCharsForModel),
 		minCharsForRtk: positiveInteger(merged.minCharsForRtk, DEFAULT_CONFIG.minCharsForRtk),
 		maxSummaryChars: positiveInteger(merged.maxSummaryChars, DEFAULT_CONFIG.maxSummaryChars),
@@ -106,7 +123,16 @@ function readJsonIfPresent(path: string): Partial<GovernorConfig> {
 	}
 }
 
+function normalizeArchivePrivacy(value: unknown): ArchivePrivacy {
+	return value === "redact" || value === "off" ? value : "raw";
+}
+
 function positiveInteger(value: unknown, fallback: number): number {
 	const number = typeof value === "number" ? value : Number(value);
 	return Number.isFinite(number) && number > 0 ? Math.floor(number) : fallback;
+}
+
+function nonNegativeInteger(value: unknown, fallback: number): number {
+	const number = typeof value === "number" ? value : Number(value);
+	return Number.isFinite(number) && number >= 0 ? Math.floor(number) : fallback;
 }

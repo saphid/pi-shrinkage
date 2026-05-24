@@ -8,6 +8,9 @@ export interface ArchiveRecord {
     rawChars: number;
     finalChars?: number;
     rawText: string;
+    originalChars?: number;
+    redacted?: boolean;
+    redactionCount?: number;
     input?: unknown;
 }
 export interface ArchiveHandle {
@@ -27,5 +30,6 @@ export declare class ArchiveStore {
         maxChars?: number;
     }): ArchiveRecord | undefined;
     list(limit?: number): ArchiveRecord[];
+    private enforceRetention;
 }
 export declare function makeArchiveId(toolCallId: string, toolName: string, rawText: string): string;

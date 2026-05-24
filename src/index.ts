@@ -176,6 +176,10 @@ export async function processToolResult(
 			return undefined;
 		}
 	}
+	if (config.archiveRaw && !archiveHandle) {
+		stats.finalChars += rawText.length;
+		return undefined;
+	}
 
 	const rtk = reduceDeterministic(rawSource.text, { toolName: metadata.toolName, input: metadata.input });
 	let decision = fallbackDecision(rawSource.text, rtk.text, config.fallback);

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -15,6 +15,7 @@ test("config normalizes defaults and model refs", () => {
 	assert.equal(config.fallback, "raw");
 	assert.equal(toolEnabled("bash", config), true);
 	assert.equal(toolEnabled("read", config), false);
+	assert.equal(normalizeConfig({ archivePrivacy: "off" }).archiveRaw, true);
 	assert.equal(toolEnabled("readability_score", normalizeConfig({ tools: ["read"] })), false);
 	assert.equal(toolEnabled("mcp__server__tool", normalizeConfig({ tools: ["mcp__"] })), true);
 	assert.equal(toolEnabled("custom_fetch", normalizeConfig({ tools: ["custom_*"] })), true);
@@ -38,6 +39,55 @@ test("archive saves and fetches raw output by id and line range", () => {
 		assert.ok(handle);
 		const fetched = store.fetch(handle.id, { startLine: 2, endLine: 2 });
 		assert.equal(fetched?.rawText, "two");
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+test("archive can redact secrets, turn off, and enforce retention", () => {
+	const dir = mkdtempSync(join(tmpdir(), "governor-privacy-"));
+	try {
+		mkdirSync(join(dir, "archive"), { recursive: true });
+		writeFileSync(join(dir, "archive", "package.json"), JSON.stringify({ private: true }));
+		const redacting = new ArchiveStore(dir, normalizeConfig({ archiveDir: "archive", archivePrivacy: "redact", archiveMaxFiles: 2 }));
+		const first = redacting.save({
+			toolCallId: "call-1",
+			toolName: "bash",
+			command: "curl -H 'Authorization: Bearer abcdefghijklmnop' https://example.test?token=raw-token",
+			input: { url: "https://example.test?access_token=input-token", password: "short", apiKey: "tiny", headers: { Authorization: "Bearer qrstuvwxyzabcdef" } },
+			rawText: "OPENAI_API_KEY=sk-abcdefghijklmnopqrstuvwxyz\nDB_PASSWORD=hunter2\nAWS_SECRET_ACCESS_KEY=aws-secret\nNPM_TOKEN=npm-token",
+		});
+		assert.ok(first);
+		assert.match(first.hint, /Redacted raw output/);
+		const fetched = redacting.fetch(first.id);
+		assert.equal(fetched?.redacted, true);
+		assert.doesNotMatch(JSON.stringify(fetched), /sk-abcdefghijklmnopqrstuvwxyz|hunter2|aws-secret|npm-token|abcdefghijklmnop|raw-token|input-token|qrstuvwxyzabcdef|short|tiny/);
+		const circularInput: unknown[] = [];
+		circularInput.push(circularInput);
+		const circular = redacting.save({ toolCallId: "circular", toolName: "bash", command: "echo", input: circularInput, rawText: "ok" });
+		assert.ok(circular);
+		assert.match(JSON.stringify(redacting.fetch(circular.id)?.input), /REDACTED_CIRCULAR/);
+
+		const sameCallA = redacting.save({ toolCallId: "same-call", toolName: "bash", command: "echo", rawText: "password=one" });
+		const sameCallB = redacting.save({ toolCallId: "same-call", toolName: "bash", command: "echo", rawText: "password=two" });
+		assert.ok(sameCallA);
+		assert.ok(sameCallB);
+		assert.notEqual(sameCallA.id, sameCallB.id);
+		redacting.save({ toolCallId: "call-2", toolName: "bash", command: "echo 2", rawText: "two" });
+		redacting.save({ toolCallId: "call-3", toolName: "bash", command: "echo 3", rawText: "three" });
+		assert.ok(redacting.list(10).length <= 2);
+		assert.equal(existsSync(join(dir, "archive", "package.json")), true);
+
+		const noSizeLimit = new ArchiveStore(dir, normalizeConfig({ archiveDir: "archive-tiny", archiveMaxBytes: 0 }));
+		const oversized = noSizeLimit.save({ toolCallId: "huge", toolName: "bash", command: "cat huge", rawText: "x".repeat(5000) });
+		assert.ok(oversized);
+		const cleanupOnly = new ArchiveStore(dir, normalizeConfig({ archiveDir: "archive-tiny", archiveMaxBytes: 1 }));
+		assert.equal(cleanupOnly.fetch(oversized.id), undefined);
+		const tinyBudget = new ArchiveStore(dir, normalizeConfig({ archiveDir: "archive-tiny-fail", archiveMaxBytes: 1 }));
+		assert.throws(() => tinyBudget.save({ toolCallId: "huge", toolName: "bash", command: "cat huge", rawText: "x".repeat(5000) }), /retention removed fresh archive/);
+
+		const off = new ArchiveStore(dir, normalizeConfig({ archiveDir: "archive-off", archivePrivacy: "off" }));
+		assert.equal(off.save({ toolCallId: "off", toolName: "bash", command: "echo", rawText: "secret" }), undefined);
 	} finally {
 		rmSync(dir, { recursive: true, force: true });
 	}
@@ -156,6 +206,42 @@ test("processToolResult dryRun does not archive or mutate", async () => {
 	);
 	assert.equal(result, undefined);
 	assert.equal(saved, false);
+});
+
+test("processToolResult does not prune when archive privacy is off unless archiveRaw is explicitly disabled", async () => {
+	const dir = mkdtempSync(join(tmpdir(), "governor-off-incomplete-"));
+	try {
+		const config = normalizeConfig({ archivePrivacy: "off", archiveDir: "archive", minCharsForRtk: 10 });
+		const store = new ArchiveStore(dir, config);
+		const completeRaw = `${"PASS noise\n".repeat(200)}FAIL src/foo.test.ts\nExpected 1 actual 2\n`;
+		const completeResult = await processToolResult(
+			config,
+			store,
+			{ toolName: "bash", toolCallId: "off-complete", input: { command: "npm test" } },
+			completeRaw,
+		);
+		assert.equal(completeResult, undefined);
+		const truncatedResult = await processToolResult(
+			config,
+			store,
+			{ toolName: "bash", toolCallId: "off-incomplete", input: { command: "npm test" } },
+			`${"PASS noise\n".repeat(200)}[truncated]`,
+			undefined,
+			{ truncation: { truncated: true } },
+		);
+		assert.equal(truncatedResult, undefined);
+
+		const unsafeConfig = normalizeConfig({ archivePrivacy: "off", archiveRaw: false, archiveDir: "archive", minCharsForRtk: 10 });
+		const unsafeResult = await processToolResult(
+			unsafeConfig,
+			new ArchiveStore(dir, unsafeConfig),
+			{ toolName: "bash", toolCallId: "off-no-archive", input: { command: "npm test" } },
+			completeRaw,
+		);
+		assert.ok(unsafeResult);
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
 });
 
 test("processToolResult archives full bash output from fullOutputPath before pruning", async () => {

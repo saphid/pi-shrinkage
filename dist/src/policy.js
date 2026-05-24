@@ -1,6 +1,7 @@
 import { complete } from "@earendil-works/pi-ai";
 import { parseModelRef } from "./config.js";
 import { parseDecisionJson } from "./decision.js";
+import { redactLikelySecrets } from "./redact.js";
 import { numberedLinesWithinBudget, truncateChars } from "./text.js";
 export async function decideWithSmallModel(config, ctx, input, signal) {
     const modelRef = parseModelRef(config.model);
@@ -12,7 +13,7 @@ export async function decideWithSmallModel(config, ctx, input, signal) {
     const auth = await ctx.modelRegistry.getApiKeyAndHeaders(model);
     if (!auth.ok || !auth.apiKey)
         return undefined;
-    const prompt = buildPolicyPrompt(input, config.maxSummaryChars);
+    const prompt = buildPolicyPrompt(redactPolicyInputIfNeeded(input, config), config.maxSummaryChars);
     const response = await complete(model, {
         messages: [
             {
@@ -50,6 +51,16 @@ export function fallbackDecision(rawText, rtkText, fallback) {
         return { action: "keep", confidence: 1, reason: "Policy model unavailable; configured fallback keeps raw output." };
     }
     return { action: "rtk", confidence: 0.8, reason: "Policy model unavailable; using deterministic RTK-style reduction." };
+}
+export function redactPolicyInputIfNeeded(input, config) {
+    if (!config.redactPolicyInput)
+        return input;
+    return {
+        ...input,
+        command: redactLikelySecrets(input.command).text,
+        rawText: redactLikelySecrets(input.rawText).text,
+        rtkText: redactLikelySecrets(input.rtkText).text,
+    };
 }
 function buildPolicyPrompt(input, maxSummaryChars) {
     const rawBudget = 60_000;
