@@ -1,10 +1,11 @@
 import assert from "node:assert/strict";
-import { existsSync, mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { ArchiveStore } from "../src/archive.js";
 import { DEFAULT_CONFIG, normalizeConfig, parseModelRef, toolEnabled } from "../src/config.js";
+import { RunLogStore } from "../src/log.js";
 import { processToolResult } from "../src/index.js";
 import { reduceDeterministic, stripAnsi } from "../src/rtk.js";
 import { extractText, lineSlice, numberedLinesWithinBudget, replaceTextPreservingNonText } from "../src/text.js";
@@ -15,7 +16,10 @@ test("config normalizes defaults and model refs", () => {
 	assert.equal(config.fallback, "raw");
 	assert.equal(toolEnabled("bash", config), true);
 	assert.equal(toolEnabled("read", config), false);
-	assert.equal(normalizeConfig({ archivePrivacy: "off" }).archiveRaw, true);
+	const defaults = normalizeConfig({ archivePrivacy: "off" });
+	assert.equal(defaults.archiveRaw, true);
+	assert.equal(defaults.logRuns, true);
+	assert.equal(defaults.logFile, ".pi-shrinkage/runs.jsonl");
 	assert.equal(toolEnabled("readability_score", normalizeConfig({ tools: ["read"] })), false);
 	assert.equal(toolEnabled("mcp__server__tool", normalizeConfig({ tools: ["mcp__"] })), true);
 	assert.equal(toolEnabled("custom_fetch", normalizeConfig({ tools: ["custom_*"] })), true);
@@ -206,6 +210,60 @@ test("processToolResult dryRun does not archive or mutate", async () => {
 	);
 	assert.equal(result, undefined);
 	assert.equal(saved, false);
+});
+
+test("processToolResult logs action and token counts", async () => {
+	const dir = mkdtempSync(join(tmpdir(), "governor-log-"));
+	try {
+		const config = normalizeConfig({ archiveDir: "archive", logFile: "runs.jsonl", minCharsForRtk: 10 });
+		const store = new ArchiveStore(dir, config);
+		const runLog = new RunLogStore(dir, config);
+		const raw = `${"PASS noise\n".repeat(200)}FAIL src/foo.test.ts\nExpected 1 actual 2\n`;
+		const longSecret = "a".repeat(1000);
+		const result = await processToolResult(
+			config,
+			store,
+			{ toolName: "bash", toolCallId: "log-call", input: { command: `curl -H 'Authorization: Bearer ${longSecret}' https://example.test && npm test` } },
+			raw,
+			undefined,
+			undefined,
+			undefined,
+			runLog,
+		);
+		assert.ok(result);
+		const records = readFileSync(join(dir, "runs.jsonl"), "utf8").trim().split("\n").map((line) => JSON.parse(line));
+		assert.equal(records.length, 1);
+		assert.equal(records[0].action, "shrunk");
+		assert.equal(records[0].toolName, "bash");
+		assert.equal(records[0].decisionReason, "Policy model unavailable; using deterministic RTK-style reduction.");
+		assert.match(records[0].command, /REDACTED_TOKEN/);
+		assert.doesNotMatch(records[0].command, new RegExp(longSecret.slice(0, 40)));
+		assert.equal(records[0].rawTokens, Math.ceil(raw.length / 4));
+		assert.equal(records[0].finalTokens, Math.ceil(result.finalText.length / 4));
+		assert.ok(records[0].savedTokens > 0);
+		assert.equal(records[0].changed, true);
+		assert.equal(records[0].archived, true);
+		runLog.write({
+			toolName: "bash",
+			toolCallId: "manual",
+			command: "echo ok",
+			action: "shrunk",
+			decisionReason: `quoted secret password=${longSecret}`,
+			changed: true,
+			archived: false,
+			rawComplete: true,
+			rawChars: 100,
+			finalChars: 10,
+			rawTokens: 25,
+			finalTokens: 3,
+			savedTokens: 22,
+			durationMs: 1,
+		});
+		const manualRecord = JSON.parse(readFileSync(join(dir, "runs.jsonl"), "utf8").trim().split("\n").at(-1) ?? "{}");
+		assert.doesNotMatch(manualRecord.decisionReason, new RegExp(longSecret.slice(0, 40)));
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
 });
 
 test("processToolResult does not prune when archive privacy is off unless archiveRaw is explicitly disabled", async () => {

@@ -6,6 +6,7 @@ import { defineTool } from "@earendil-works/pi-coding-agent";
 import { ArchiveStore } from "./archive.js";
 import { loadConfig, toolEnabled } from "./config.js";
 import { applyDecision } from "./decision.js";
+import { makeTokenCounts, RunLogStore } from "./log.js";
 import { decideWithSmallModel, fallbackDecision, shouldAskPolicy } from "./policy.js";
 import { reduceDeterministic } from "./rtk.js";
 import { commandFromInput, contentFromText, extractText, replaceTextPreservingNonText } from "./text.js";
@@ -14,10 +15,12 @@ export default function toolResultGovernor(pi) {
     let currentCwd = process.cwd();
     let config = loadConfig(currentCwd);
     let archive = new ArchiveStore(currentCwd, config);
+    let runLog = new RunLogStore(currentCwd, config);
     const refresh = (cwd = currentCwd) => {
         currentCwd = cwd;
         config = loadConfig(currentCwd);
         archive = new ArchiveStore(currentCwd, config);
+        runLog = new RunLogStore(currentCwd, config);
     };
     pi.on("session_start", async (_event, ctx) => refresh(ctx.cwd));
     pi.on("session_tree", async (_event, ctx) => refresh(ctx.cwd));
@@ -36,7 +39,7 @@ export default function toolResultGovernor(pi) {
             toolCallId: String(event.toolCallId || "unknown"),
             input: event.input,
         };
-        const result = await processToolResult(config, archive, metadata, extracted.text, ctx, event.details, ctx.signal);
+        const result = await processToolResult(config, archive, metadata, extracted.text, ctx, event.details, ctx.signal, runLog);
         if (!result)
             return;
         return {
@@ -95,6 +98,7 @@ export default function toolResultGovernor(pi) {
             `seen=${stats.seen} changed=${stats.changed} archived=${stats.archived} policyCalls=${stats.policyCalls}`,
             `chars raw=${stats.rawChars} final=${stats.finalChars} saved≈${saved}`,
             `model=${config.model ?? "none"} fallback=${config.fallback} last=${stats.lastStrategy ?? "none"}`,
+            `run log: ${config.logRuns ? config.logFile : "disabled"}`,
             `recent archives:`,
             ...recent.map((record) => `- ${record.id} ${record.toolName} ${record.rawChars} chars ${record.command}`),
         ];
@@ -109,21 +113,37 @@ export default function toolResultGovernor(pi) {
         handler: statusHandler,
     });
 }
-export async function processToolResult(config, archive, metadata, rawText, ctx, details, signal) {
+export async function processToolResult(config, archive, metadata, rawText, ctx, details, signal, runLog) {
+    const startedAt = Date.now();
     stats.seen++;
     const command = commandFromInput(metadata.input);
     const rawSource = resolveCompleteRawText(rawText, details, metadata.toolName);
     stats.rawChars += rawSource.text.length;
+    const logRun = (input) => {
+        const tokens = makeTokenCounts(input.rawChars, input.finalChars);
+        runLog?.write({
+            ...input,
+            ...tokens,
+            toolName: metadata.toolName,
+            toolCallId: metadata.toolCallId,
+            command,
+            rawComplete: rawSource.complete,
+            durationMs: Date.now() - startedAt,
+        });
+    };
     if (rawSource.text.length < config.minCharsForRtk) {
         stats.finalChars += rawText.length;
+        logRun({ action: "unchanged_below_threshold", changed: false, archived: false, rawChars: rawSource.text.length, finalChars: rawText.length });
         return undefined;
     }
     if (!rawSource.complete && config.archiveRaw) {
         stats.finalChars += rawText.length;
+        logRun({ action: "unchanged_incomplete_unarchived", changed: false, archived: false, rawChars: rawSource.text.length, finalChars: rawText.length });
         return undefined;
     }
     if (config.dryRun) {
         stats.finalChars += rawText.length;
+        logRun({ action: "dry_run_unchanged", changed: false, archived: false, rawChars: rawSource.text.length, finalChars: rawText.length });
         return undefined;
     }
     let archiveHandle;
@@ -142,11 +162,13 @@ export async function processToolResult(config, archive, metadata, rawText, ctx,
         archiveHandle = undefined;
         if (config.archiveRaw) {
             stats.finalChars += rawText.length;
+            logRun({ action: "unchanged_archive_failed", changed: false, archived: false, rawChars: rawSource.text.length, finalChars: rawText.length });
             return undefined;
         }
     }
     if (config.archiveRaw && !archiveHandle) {
         stats.finalChars += rawText.length;
+        logRun({ action: "unchanged_archive_unavailable", changed: false, archived: false, rawChars: rawSource.text.length, finalChars: rawText.length });
         return undefined;
     }
     const rtk = reduceDeterministic(rawSource.text, { toolName: metadata.toolName, input: metadata.input });
@@ -170,7 +192,19 @@ export async function processToolResult(config, archive, metadata, rawText, ctx,
         ? `${rawText}\n\n[shrinkage: full raw output was already externalized/truncated and was not re-expanded into active context.${archiveHandle ? ` ${archiveHandle.hint}` : ""}]`
         : applyDecision({ decision, rawText: rawSource.text, rtkText: rtk.text, archive: archiveHandle, maxSummaryChars: config.maxSummaryChars });
     stats.finalChars += finalText.length;
-    if (config.dryRun || finalText === rawText)
+    const changed = !(config.dryRun || finalText === rawText);
+    logRun({
+        action: changed ? "shrunk" : "unchanged_same_text",
+        strategy,
+        decisionAction: decision.action,
+        decisionReason: decision.reason,
+        changed,
+        archived: Boolean(archiveHandle),
+        archiveId: archiveHandle?.id,
+        rawChars: rawSource.text.length,
+        finalChars: finalText.length,
+    });
+    if (!changed)
         return undefined;
     stats.changed++;
     stats.lastStrategy = strategy;

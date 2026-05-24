@@ -4,4 +4,5 @@ dist/
 *.log
 .governor/archive/
 .pi-shrinkage/archive/
+.pi-shrinkage/runs.jsonl
 .xbuild/

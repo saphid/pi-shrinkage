@@ -14,6 +14,8 @@ export interface GovernorConfig {
 	archiveMaxAgeDays: number;
 	archiveMaxBytes: number;
 	redactPolicyInput: boolean;
+	logRuns: boolean;
+	logFile: string;
 	minCharsForModel: number;
 	minCharsForRtk: number;
 	maxSummaryChars: number;
@@ -46,6 +48,8 @@ export const DEFAULT_CONFIG: GovernorConfig = {
 	archiveMaxAgeDays: 30,
 	archiveMaxBytes: 100 * 1024 * 1024,
 	redactPolicyInput: true,
+	logRuns: true,
+	logFile: ".pi-shrinkage/runs.jsonl",
 	minCharsForModel: 8000,
 	minCharsForRtk: 1200,
 	maxSummaryChars: 3000,
@@ -83,6 +87,8 @@ export function normalizeConfig(input: Partial<GovernorConfig>): GovernorConfig 
 		archiveMaxAgeDays: nonNegativeInteger(merged.archiveMaxAgeDays, DEFAULT_CONFIG.archiveMaxAgeDays),
 		archiveMaxBytes: nonNegativeInteger(merged.archiveMaxBytes, DEFAULT_CONFIG.archiveMaxBytes),
 		redactPolicyInput: merged.redactPolicyInput !== false,
+		logRuns: merged.logRuns !== false,
+		logFile: String(merged.logFile || DEFAULT_CONFIG.logFile),
 		minCharsForModel: positiveInteger(merged.minCharsForModel, DEFAULT_CONFIG.minCharsForModel),
 		minCharsForRtk: positiveInteger(merged.minCharsForRtk, DEFAULT_CONFIG.minCharsForRtk),
 		maxSummaryChars: positiveInteger(merged.maxSummaryChars, DEFAULT_CONFIG.maxSummaryChars),

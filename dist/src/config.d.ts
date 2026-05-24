@@ -9,6 +9,8 @@ export interface GovernorConfig {
     archiveMaxAgeDays: number;
     archiveMaxBytes: number;
     redactPolicyInput: boolean;
+    logRuns: boolean;
+    logFile: string;
     minCharsForModel: number;
     minCharsForRtk: number;
     maxSummaryChars: number;
