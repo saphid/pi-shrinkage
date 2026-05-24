@@ -77,7 +77,7 @@ export function configPath(cwd, archiveDir) {
 }
 function mergeProjectConfig(base, project) {
     const merged = { ...base, ...project };
-    // Project configs are repo-controlled. Let them make Pi-Shrinkage stricter,
+    // Project configs are repo-controlled. Let them make pi-shrinkage stricter,
     // but do not let an untrusted checkout weaken user/global privacy choices.
     merged.enabled = base.enabled === false ? false : project.enabled !== false;
     merged.archiveRaw = base.archiveRaw === false ? false : true;

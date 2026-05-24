@@ -1,11 +1,11 @@
 ---
 name: pi-shrinkage
-description: Use when working with Pi-Shrinkage reduced tool results, recovering archived raw/redacted outputs with tool_result_fetch, inspecting shrinkage run logs, or tuning Pi-Shrinkage privacy and retention config.
+description: Use when working with pi-shrinkage reduced tool results, recovering archived raw/redacted outputs with tool_result_fetch, inspecting shrinkage run logs, or tuning pi-shrinkage privacy and retention config.
 ---
 
-# Pi-Shrinkage
+# pi-shrinkage
 
-Pi-Shrinkage reduces large Pi tool results before they enter active context. Treat reduced output as a lossy view unless it explicitly says the full/raw or redacted archive is available.
+pi-shrinkage reduces large Pi tool results before they enter active context. Treat reduced output as a lossy view unless it explicitly says the full/raw or redacted archive is available.
 
 ## When a result has a shrinkage footer
 
@@ -23,7 +23,7 @@ with the `tool_result_fetch` tool. Prefer `startLine`/`endLine` slices when the 
 
 - `archivePrivacy: "raw"` can recover exact original output and may contain secrets.
 - `archivePrivacy: "redact"` recovers best-effort redacted output; do not expect exact secrets/tokens to be recoverable.
-- `archivePrivacy: "off"` avoids archives; Pi-Shrinkage should leave large outputs unchanged unless the user explicitly configured `archiveRaw: false`.
+- `archivePrivacy: "off"` avoids archives; pi-shrinkage should leave large outputs unchanged unless the user explicitly configured `archiveRaw: false`.
 
 ## Tuning checklist
 

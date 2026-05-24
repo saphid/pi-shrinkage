@@ -1,6 +1,6 @@
-![Pi-Shrinkage banner](assets/readme-banner.png)
+![pi-shrinkage banner](assets/readme-banner.png)
 
-# Pi-Shrinkage
+# pi-shrinkage
 
 A Pi extension that keeps huge tool results from eating the whole context window.
 
@@ -10,7 +10,7 @@ The point is not to be clever. The point is to stop dumping 80,000 lines of logs
 
 ## What you get
 
-Pi-Shrinkage is a **Pi package**. It ships:
+pi-shrinkage is a **Pi package**. It ships:
 
 - a Pi extension: `dist/src/index.js`
 - a Pi skill: `skills/pi-shrinkage/SKILL.md`
@@ -30,13 +30,13 @@ pi install npm:pi-shrinkage
 From a local checkout:
 
 ```bash
-pi install /path/to/Pi-Shrinkage
+pi install /path/to/pi-shrinkage
 ```
 
 For one temporary Pi run while developing:
 
 ```bash
-pi -e /path/to/Pi-Shrinkage
+pi -e /path/to/pi-shrinkage
 ```
 
 From a tarball:
@@ -61,7 +61,7 @@ Large tool output normally does this:
 2. the model burns context reading it
 3. the important part may still be buried somewhere in the middle
 
-Pi-Shrinkage changes that flow:
+pi-shrinkage changes that flow:
 
 1. archive the result, usually redacted by default
 2. run deterministic reducers for common output shapes
@@ -90,7 +90,7 @@ If the reducer is unsure, it should prefer useful evidence over maximum shrinkag
 
 You can configure a small model to act as a policy proxy. It does not run by default.
 
-When enabled, Pi-Shrinkage still runs the deterministic reducer first, then asks the model to choose one of:
+When enabled, pi-shrinkage still runs the deterministic reducer first, then asks the model to choose one of:
 
 - `keep`
 - `rtk`
@@ -103,7 +103,7 @@ This is intentionally a policy step, not a magic summarizer for everything. The 
 
 ## Recovery
 
-When Pi-Shrinkage changes a tool result and an archive exists, the returned text includes a footer like:
+When pi-shrinkage changes a tool result and an archive exists, the returned text includes a footer like:
 
 ```text
 [shrinkage: Redacted raw output archived as call-abc123. If this reduction is insufficient, suspicious, or missing exact lines, call tool_result_fetch({ id: "call-abc123" }) ...]
@@ -121,7 +121,7 @@ That recovery path is the safety valve. If the reduced view looks wrong, suspici
 
 This is the part that matters.
 
-Pruning without recovery is dangerous, but raw archives can contain secrets. Pi-Shrinkage defaults to the safer middle ground:
+Pruning without recovery is dangerous, but raw archives can contain secrets. pi-shrinkage defaults to the safer middle ground:
 
 ```json
 {
@@ -193,11 +193,11 @@ To enable the optional policy model globally:
 }
 ```
 
-If the model is missing or fails, Pi-Shrinkage falls back to deterministic reduction.
+If the model is missing or fails, pi-shrinkage falls back to deterministic reduction.
 
 ## Run log
 
-Pi-Shrinkage writes a JSONL decision log by default:
+pi-shrinkage writes a JSONL decision log by default:
 
 ```text
 .pi-shrinkage/runs.jsonl

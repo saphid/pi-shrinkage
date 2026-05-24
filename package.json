@@ -2,13 +2,13 @@
   "name": "pi-shrinkage",
   "version": "0.1.0",
   "description": "Hybrid RTK-style tool-result pruning plus optional small-model policy for Pi coding agent.",
-  "homepage": "https://github.com/saphid/Pi-Shrinkage#readme",
+  "homepage": "https://github.com/saphid/pi-shrinkage#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/saphid/Pi-Shrinkage.git"
+    "url": "git+https://github.com/saphid/pi-shrinkage.git"
   },
   "bugs": {
-    "url": "https://github.com/saphid/Pi-Shrinkage/issues"
+    "url": "https://github.com/saphid/pi-shrinkage/issues"
   },
   "type": "module",
   "main": "dist/src/index.js",

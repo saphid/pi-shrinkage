@@ -59,9 +59,9 @@ export default function toolResultGovernor(pi) {
     pi.registerTool(defineTool({
         name: "tool_result_fetch",
         label: "Tool Result Fetch",
-        description: "Recover raw archived tool output pruned by Pi-Shrinkage. Use when a reduced/summarized result looks insufficient, suspicious, incomplete, or exact original lines are needed.",
+        description: "Recover raw archived tool output pruned by pi-shrinkage. Use when a reduced/summarized result looks insufficient, suspicious, incomplete, or exact original lines are needed.",
         parameters: Type.Object({
-            id: Type.String({ description: "Archive id from a Pi-Shrinkage retrieval hint" }),
+            id: Type.String({ description: "Archive id from a pi-shrinkage retrieval hint" }),
             startLine: Type.Optional(Type.Number({ description: "1-based start line" })),
             endLine: Type.Optional(Type.Number({ description: "1-based inclusive end line" })),
             maxChars: Type.Optional(Type.Number({ description: "Maximum characters to return" })),
@@ -94,7 +94,7 @@ export default function toolResultGovernor(pi) {
         const recent = archive.list(5);
         const saved = Math.max(stats.rawChars - stats.finalChars, 0);
         const lines = [
-            `Pi-Shrinkage: ${config.enabled ? "enabled" : "disabled"}`,
+            `pi-shrinkage: ${config.enabled ? "enabled" : "disabled"}`,
             `seen=${stats.seen} changed=${stats.changed} archived=${stats.archived} policyCalls=${stats.policyCalls}`,
             `chars raw=${stats.rawChars} final=${stats.finalChars} saved≈${saved}`,
             `model=${config.model ?? "none"} fallback=${config.fallback} last=${stats.lastStrategy ?? "none"}`,
@@ -105,7 +105,7 @@ export default function toolResultGovernor(pi) {
         ctx.ui.notify(lines.join("\n"), "info");
     };
     pi.registerCommand("shrinkage", {
-        description: "Show Pi-Shrinkage status and recent archive entries",
+        description: "Show pi-shrinkage status and recent archive entries",
         handler: statusHandler,
     });
     pi.registerCommand("governor", {

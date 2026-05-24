@@ -108,7 +108,7 @@ export function configPath(cwd: string, archiveDir: string): string {
 
 function mergeProjectConfig(base: GovernorConfig, project: Partial<GovernorConfig>): Partial<GovernorConfig> {
 	const merged: Partial<GovernorConfig> = { ...base, ...project };
-	// Project configs are repo-controlled. Let them make Pi-Shrinkage stricter,
+	// Project configs are repo-controlled. Let them make pi-shrinkage stricter,
 	// but do not let an untrusted checkout weaken user/global privacy choices.
 	merged.enabled = base.enabled === false ? false : project.enabled !== false;
 	merged.archiveRaw = base.archiveRaw === false ? false : true;
